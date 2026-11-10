@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="112" fill="#0F1117"/>
+  <rect x="28" y="28" width="456" height="456" rx="92" stroke="#1E293B" stroke-width="6"/>
+  <!-- Interval Step Bars representing Intervals.icu workout blocks -->
+  <rect x="88" y="264" width="48" height="144" rx="10" fill="#14B8A6"/>
+  <rect x="154" y="196" width="48" height="212" rx="10" fill="#22C55E"/>
+  <rect x="220" y="120" width="48" height="288" rx="10" fill="#F97316"/>
+  <rect x="286" y="160" width="48" height="248" rx="10" fill="#F59E0B"/>
+  <rect x="352" y="104" width="48" height="304" rx="10" fill="#06B6D4"/>
+  <!-- Telemetry Pulse Line -->
+  <path d="M76 184 L148 156 L210 190 L278 96 L340 144 L428 84" stroke="#38BDF8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="278" cy="96" r="12" fill="#0F1117" stroke="#38BDF8" stroke-width="8"/>
+  <circle cx="428" cy="84" r="12" fill="#38BDF8"/>
+</svg>

@@ -1,0 +1,27 @@
+# Node / Web Preview
+node_modules/
+dist/
+coverage/
+*.log
+
+# Environment & Secrets (Never commit real credentials)
+.env*
+!.env.example
+
+# Android / Gradle / IntelliJ
+.gradle/
+build/
+android-kotlin/.gradle/
+android-kotlin/build/
+android-kotlin/app/build/
+local.properties
+android-kotlin/local.properties
+.idea/
+*.iml
+*.jks
+*.keystore
+
+# OS & Workspace Artifacts
+.DS_Store
+.aistudio/
+public/assets/aistudio/

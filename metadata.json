@@ -1,0 +1,6 @@
+{
+  "name": "Intervals.icu Mobile Companion",
+  "description": "Installable Android PWA and mobile training companion for Intervals.icu featuring coach-prescribed workout pace diagrams, multi-stream activity telemetry, daily wellness tracking, and smart 12-hour sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
