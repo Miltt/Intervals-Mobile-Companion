@@ -119,7 +119,9 @@ dependencies {
 
     <application
         android:allowBackup="true"
-        android:label="Intervals.icu Runner"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="Intervals Companion"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity

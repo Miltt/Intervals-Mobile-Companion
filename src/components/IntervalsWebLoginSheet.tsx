@@ -97,7 +97,13 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
         {/* Original Intervals.icu Web Login / OAuth Consent Content */}
         <div className="p-5 overflow-y-auto space-y-4 text-slate-100">
           {/* Intervals.icu Brand Header */}
-          <div className="text-center space-y-1">
+          <div className="text-center space-y-1.5">
+            <img
+              src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+              alt="Intervals Mobile Companion Logo"
+              referrerPolicy="no-referrer"
+              className="w-14 h-14 rounded-2xl mx-auto border border-cyan-500/40 object-cover shadow-lg"
+            />
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
               <Globe className="w-3.5 h-3.5" />
               <span>intervals.icu Official Web Sign-In</span>

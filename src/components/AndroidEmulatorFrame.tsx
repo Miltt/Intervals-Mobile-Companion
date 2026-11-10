@@ -96,9 +96,12 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
       {/* Top Android Studio Native Kotlin Workspace Header */}
       <div className="w-full max-w-[1440px] mb-3 rounded-2xl bg-[#131722] border border-slate-800/90 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-            <Smartphone className="w-4 h-4" />
-          </div>
+          <img
+            src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+            alt="Intervals Companion App Icon"
+            referrerPolicy="no-referrer"
+            className="w-9 h-9 rounded-xl border border-cyan-500/40 object-cover shadow-md shrink-0"
+          />
           <div>
             <div className="text-xs sm:text-sm font-bold text-slate-100 flex items-center gap-2">
               <span>Android Studio · Native Kotlin + Jetpack Compose</span>
@@ -317,9 +320,12 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
                       onClick={() => setIsOnHomeScreen(false)}
                       className="flex flex-col items-center gap-2 group cursor-pointer"
                     >
-                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                        <Footprints className="w-8 h-8 text-slate-950" />
-                      </div>
+                      <img
+                        src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+                        alt="Intervals Companion Launcher Icon"
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 rounded-2xl border border-cyan-400/40 object-cover shadow-xl group-hover:scale-105 transition-transform"
+                      />
                       <span className="text-xs font-medium text-slate-200">Intervals.icu</span>
                     </button>
                   </div>
