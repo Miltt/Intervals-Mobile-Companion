@@ -41,7 +41,7 @@ import { CompletedActivityDetail } from './components/CompletedActivityDetail';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { KotlinExportModal } from './components/KotlinExportModal';
 import { AndroidEmulatorFrame } from './components/AndroidEmulatorFrame';
-import { SettingsScreen } from './components/SettingsScreen';
+import { SettingsScreen, SettingsSubMenu } from './components/SettingsScreen';
 import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
 import { useLocalization } from './i18n/useTranslation';
 
@@ -146,6 +146,7 @@ export default function App() {
     return todayDay ? todayDay.date : '2026-10-29';
   });
   const [activeSection, setActiveSection] = useState<NavSection>('calendar');
+  const [settingsSubMenu, setSettingsSubMenu] = useState<SettingsSubMenu>(null);
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
 
   // Active workout type filter inside the bottom-right Filter popup.
@@ -565,7 +566,11 @@ export default function App() {
         } else if (selectedItem) {
           setSelectedItem(null);
           setShowFloatingBottomBar(true);
+        } else if (activeSection === 'settings' && settingsSubMenu !== null) {
+          setSettingsSubMenu(null);
+          scrollToTop();
         } else if (activeSection !== 'calendar') {
+          setSettingsSubMenu(null);
           setActiveSection('calendar');
           setShowFloatingBottomBar(true);
         }
@@ -573,6 +578,7 @@ export default function App() {
       onHomeGesture={() => {
         setIsFilterPopoverOpen(false);
         setSelectedItem(null);
+        setSettingsSubMenu(null);
         setActiveSection('calendar');
         setShowFloatingBottomBar(true);
       }}
@@ -666,7 +672,7 @@ export default function App() {
           )}
 
           <main className="max-w-5xl mx-auto px-3.5 sm:px-5 pt-3.5 space-y-3.5">
-            {/* Scrollable "intervals.icu" header + Icon-only Settings button (Hidden in Settings) */}
+            {/* Scrollable "Intervals Companion" header + Icon-only Settings button (Hidden in Settings) */}
             {activeSection !== 'settings' && (
               <div className="flex items-center justify-between gap-2 pt-0.5 px-0.5">
                 <div>
@@ -680,7 +686,7 @@ export default function App() {
                       isLight ? 'text-slate-900' : 'text-white'
                     }`}
                   >
-                    intervals.icu
+                    Intervals Companion
                   </button>
                   <div className="text-[11px] font-mono tabular-nums text-slate-400">
                     {t('app.subtitle.pull_to_sync')} · {syncTiming.lastSyncLabel} ·{' '}
@@ -696,6 +702,7 @@ export default function App() {
                   onClick={() => {
                     setIsFilterPopoverOpen(false);
                     setSelectedItem(null);
+                    setSettingsSubMenu(null);
                     setActiveSection('settings');
                     scrollToTop();
                   }}
@@ -747,6 +754,11 @@ export default function App() {
                 nextSyncLabel={syncTiming.nextSyncLabel}
                 t={t}
                 availableLanguages={availableLanguages}
+                activeSubMenu={settingsSubMenu}
+                onSelectSubMenu={(sub) => {
+                  setSettingsSubMenu(sub);
+                  scrollToTop();
+                }}
                 onSyncLanguagesFromGitHub={syncLanguagesFromGitHub}
                 onUpdateSettings={handleUpdateSettings}
                 onOpenWebLogin={() => setShowWebLoginSheet(true)}

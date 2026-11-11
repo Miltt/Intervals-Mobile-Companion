@@ -64,9 +64,10 @@ export interface AppSettings {
   autoSyncHours: 6 | 12 | 24 | 0; // 0 = Manual pull-to-refresh only
   themeMode: ThemeMode;
   units: UnitSystem;
-  lookaheadDays: 14 | 28;
+  lookaheadDays: 7 | 14 | 28;
   wifiOnlySync: boolean;
   morningWorkoutNotification: boolean;
+  workoutNotificationTime: string; // e.g. '07:00' (24-hour HH:mm)
   enabledSports: SportType[]; // Activity types checked in Settings to upload & show
 }
 
@@ -85,6 +86,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   lookaheadDays: 14,
   wifiOnlySync: false,
   morningWorkoutNotification: true,
+  workoutNotificationTime: '07:00',
   enabledSports: ['Run', 'Swim', 'Strength', 'Mobility'],
 };
 

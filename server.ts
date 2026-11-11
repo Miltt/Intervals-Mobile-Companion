@@ -282,6 +282,7 @@ async function startServer() {
   });
 
   if (process.env.NODE_ENV !== 'production') {
+    process.env.DISABLE_HMR = 'true';
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
