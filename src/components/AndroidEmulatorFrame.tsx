@@ -97,7 +97,7 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
       <div className="w-full max-w-[1440px] mb-3 rounded-2xl bg-[#131722] border border-slate-800/90 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <img
-            src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+            src="/pwa-512x512.png"
             alt="Intervals Companion App Icon"
             referrerPolicy="no-referrer"
             className="w-9 h-9 rounded-xl border border-cyan-500/40 object-cover shadow-md shrink-0"
@@ -321,7 +321,7 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
                       className="flex flex-col items-center gap-2 group cursor-pointer"
                     >
                       <img
-                        src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+                        src="/pwa-512x512.png"
                         alt="Intervals Companion Launcher Icon"
                         referrerPolicy="no-referrer"
                         className="w-16 h-16 rounded-2xl border border-cyan-400/40 object-cover shadow-xl group-hover:scale-105 transition-transform"

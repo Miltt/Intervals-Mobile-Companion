@@ -99,7 +99,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
           {/* Intervals.icu Brand Header */}
           <div className="text-center space-y-1.5">
             <img
-              src="/src/assets/images/intervals_app_icon_1794341428449.jpg"
+              src="/pwa-512x512.png"
               alt="Intervals Mobile Companion Logo"
               referrerPolicy="no-referrer"
               className="w-14 h-14 rounded-2xl mx-auto border border-cyan-500/40 object-cover shadow-lg"
