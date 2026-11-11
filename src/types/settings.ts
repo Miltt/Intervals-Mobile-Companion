@@ -60,10 +60,10 @@ export interface AppSettings {
   isLoggedIn: boolean;
   athleteName: string;
   athleteEmail: string;
+  language: string; // e.g. 'en' | 'de' | 'ru' | 'fr' | 'it' or any language from /public/locales/index.json
   autoSyncHours: 6 | 12 | 24 | 0; // 0 = Manual pull-to-refresh only
   themeMode: ThemeMode;
   units: UnitSystem;
-  thresholdPaceFormatted: string; // e.g. "3:20/km" (100% reference pace)
   lookaheadDays: 14 | 28;
   wifiOnlySync: boolean;
   morningWorkoutNotification: boolean;
@@ -74,10 +74,14 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   isLoggedIn: true,
   athleteName: 'Intervals.icu Athlete',
   athleteEmail: 'athlete@example.com',
+  language:
+    typeof navigator !== 'undefined' &&
+    ['en', 'de', 'ru', 'fr', 'it'].includes(navigator.language.slice(0, 2).toLowerCase())
+      ? navigator.language.slice(0, 2).toLowerCase()
+      : 'en',
   autoSyncHours: 12,
   themeMode: 'dark',
   units: 'metric',
-  thresholdPaceFormatted: '3:20/km',
   lookaheadDays: 14,
   wifiOnlySync: false,
   morningWorkoutNotification: true,

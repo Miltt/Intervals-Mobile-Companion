@@ -18,6 +18,7 @@ interface PlannedWorkoutDetailProps {
   workout: PlannedWorkout;
   onClose: () => void;
   onToggleComplete: (workoutId: string) => void;
+  t?: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function getSportIcon(sport: SportType) {
@@ -41,7 +42,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
   workout,
   onClose,
   onToggleComplete,
+  t,
 }) => {
+  const tr = (key: string, fallback: string) => (t ? t(key) : fallback);
   const [showPctMode, setShowPctMode] = useState<boolean>(true);
   const [selectedStep, setSelectedStep] = useState<WorkoutStepBlock | null>(
     workout.steps[0] || null
@@ -53,22 +56,19 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
     workout.steps.reduce((acc, s) => Math.max(acc, s.endSec), 0) || 1800
   );
 
-  // Compute time ticks matching Intervals.icu (7 intervals across total duration, e.g., every 500s = 8:20 for 3900s)
+  // Compute time ticks matching Intervals.icu
   const tickInterval = totalSec === 3900 ? 500 : Math.max(300, Math.round(totalSec / 7 / 60) * 60);
   const timeTicks: number[] = [];
-  for (let t = 0; t <= totalSec; t += tickInterval) {
-    timeTicks.push(t);
+  for (let tSec = 0; tSec <= totalSec; tSec += tickInterval) {
+    timeTicks.push(tSec);
   }
 
-  // Pace scale: faster pace (lower sec/km, e.g. 200s = 3:20/km) is higher on the chart;
-  // slower pace (higher sec/km, e.g. 300s = 5:00/km) is lower on the chart
   const topPaceSec = 195; // 3:15/km top ceiling
   const bottomPaceSec = 310; // 5:10/km baseline
 
   const getStepHeightPct = (step: WorkoutStepBlock): number => {
     if (showPctMode) {
       const avgPct = (step.pctPaceMin + step.pctPaceMax) / 2;
-      // Map 50%..105% -> 22%..92% height
       return Math.min(95, Math.max(20, ((avgPct - 50) / 55) * 75 + 18));
     }
     const clamped = Math.min(bottomPaceSec, Math.max(topPaceSec, step.paceMidSecPerKm));
@@ -108,7 +108,6 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Format date header like "Friday · 30 Oct 08:00 AM"
   const parsedDate = new Date(`${workout.date}T12:00:00`);
   const weekdayName = parsedDate.toLocaleDateString('en-US', { weekday: 'long' });
   const dayMonthStr = parsedDate.toLocaleDateString('en-GB', {
@@ -118,7 +117,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
 
   return (
     <div className="bg-[#181b24] border border-slate-800/90 rounded-2xl shadow-2xl overflow-hidden text-slate-100">
-      {/* Top Header Bar — matches Screenshot 3 */}
+      {/* Top Header Bar */}
       <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 bg-[#141720]">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -144,14 +143,18 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
         {/* Summary KPI Strip: Duration, Distance, Load, Intensity */}
         <div className="flex items-center gap-4 sm:gap-6 ml-auto font-mono tabular-nums">
           <div className="text-center">
-            <div className="text-[11px] text-slate-400 font-sans">Duration</div>
+            <div className="text-[11px] text-slate-400 font-sans">
+              {tr('detail.duration', 'Duration')}
+            </div>
             <div className="text-sm sm:text-base font-bold text-slate-100">
               {workout.durationLabel}
             </div>
           </div>
           {workout.distanceKm !== undefined && workout.distanceKm > 0 && (
             <div className="text-center">
-              <div className="text-[11px] text-slate-400 font-sans">Distance</div>
+              <div className="text-[11px] text-slate-400 font-sans">
+                {tr('detail.distance', 'Distance')}
+              </div>
               <div className="text-sm sm:text-base font-bold text-slate-100">
                 {workout.distanceKm} km
               </div>
@@ -159,7 +162,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
           )}
           {workout.load !== undefined && (
             <div className="text-center">
-              <div className="text-[11px] text-slate-400 font-sans">Load</div>
+              <div className="text-[11px] text-slate-400 font-sans">
+                {tr('detail.load', 'Load')}
+              </div>
               <div className="text-sm sm:text-base font-bold text-slate-100">
                 {workout.load}
               </div>
@@ -167,7 +172,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
           )}
           {workout.intensityPct !== undefined && (
             <div className="text-center">
-              <div className="text-[11px] text-slate-400 font-sans">Intensity</div>
+              <div className="text-[11px] text-slate-400 font-sans">
+                {tr('detail.intensity', 'Intensity')}
+              </div>
               <div className="text-sm sm:text-base font-bold text-slate-100">
                 {workout.intensityPct}%
               </div>
@@ -188,7 +195,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
         {/* Left: Coach Written Workout Structure */}
         <div className="md:col-span-7 space-y-3">
           <div className="text-xs font-medium text-slate-400">
-            Planned Workout Structure
+            {tr('detail.structure', 'Planned Workout Structure')}
           </div>
           <div className="space-y-3 text-sm text-slate-100 leading-relaxed">
             {workout.instructionGroups.map((group) => (
@@ -214,7 +221,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
 
           {workout.coachNotes && (
             <div className="pt-2 text-xs text-slate-400 leading-relaxed border-t border-slate-800/70">
-              <span className="text-slate-300 font-medium">Coach Notes: </span>
+              <span className="text-slate-300 font-medium">
+                {tr('detail.coach_notes', 'Coach Notes:')}{' '}
+              </span>
               {workout.coachNotes}
             </div>
           )}
@@ -224,7 +233,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
         <div className="md:col-span-5 flex flex-col justify-start md:items-end">
           <div className="w-full max-w-[260px] space-y-1.5 font-mono tabular-nums text-xs">
             <div className="text-xs font-sans font-medium text-slate-400 mb-2">
-              Time in Zones
+              {tr('detail.time_in_zones', 'Time in Zones')}
             </div>
             {workout.zoneDistribution.map((z) => (
               <div key={z.zone} className="grid grid-cols-12 items-center gap-2">
@@ -260,18 +269,20 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
           {/* Interactive Selected Step Readout Banner */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
             <div className="flex items-center gap-2 text-slate-300 font-mono tabular-nums">
-              <span className="text-slate-400 font-sans">Selected Block:</span>
+              <span className="text-slate-400 font-sans">
+                {tr('detail.selected_block', 'Selected Block:')}
+              </span>
               {selectedStep ? (
                 <span className="text-cyan-300 font-medium">
                   {selectedStep.label} ({formatSecondsToClock(selectedStep.startSec)} –{' '}
                   {formatSecondsToClock(selectedStep.endSec)})
                 </span>
               ) : (
-                <span>Tap any bar on the diagram to inspect target pace</span>
+                <span>{tr('detail.tap_bar_hint', 'Tap any bar on the diagram to inspect target pace')}</span>
               )}
             </div>
             <span className="text-[11px] text-slate-400 font-mono">
-              Target: {showPctMode ? '% Pace + min/km' : 'Pace/km'}
+              {tr('detail.target', 'Target:')} {showPctMode ? '% Pace + min/km' : tr('detail.pace_km', 'Pace/km')}
             </span>
           </div>
 
@@ -281,10 +292,10 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
               {/* Vertical Y-Axis Label & Pace Ticks */}
               <div className="w-14 shrink-0 flex items-center pr-2">
                 <div className="-rotate-90 text-[10px] text-slate-400 whitespace-nowrap w-4 text-center">
-                  {showPctMode ? 'Pace/km' : 'Pace/km'}
+                  {tr('detail.pace_km', 'Pace/km')}
                 </div>
                 <div className="flex-1 h-40 flex flex-col justify-between text-right font-mono tabular-nums text-[11px] text-slate-400 py-1">
-                  <span>{showPctMode ? '3:20' : '3:20'}</span>
+                  <span>3:20</span>
                   <span>{showPctMode ? '3:42' : '3:45'}</span>
                   <span>{showPctMode ? '4:10' : '4:15'}</span>
                   <span>{showPctMode ? '4:46' : '4:50'}</span>
@@ -293,7 +304,6 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
 
               {/* Plot Area with Horizontal Gridlines and Proportional Duration Step Blocks */}
               <div className="relative flex-1 h-40 border-b border-l border-slate-700/80 bg-[#12151e]">
-                {/* Horizontal reference lines */}
                 <div className="absolute inset-0 flex flex-col justify-between pointer-events-none py-2">
                   <div className="border-t border-slate-800/90 w-full" />
                   <div className="border-t border-slate-800/90 w-full" />
@@ -335,15 +345,15 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
 
             {/* X-Axis Elapsed Time Labels */}
             <div className="flex items-center pl-14 pt-1.5 font-mono tabular-nums text-[11px] text-slate-400 justify-between">
-              {timeTicks.map((t) => (
-                <span key={t}>{formatSecondsToClock(t)}</span>
+              {timeTicks.map((tSec) => (
+                <span key={tSec}>{formatSecondsToClock(tSec)}</span>
               ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Bottom Action Bar — Matches Screenshot 3 (% toggle, Copy, Download, Mark Done, Close) */}
+      {/* Bottom Action Bar */}
       <div className="px-4 py-3 sm:px-6 border-t border-slate-800/80 bg-[#141720] flex flex-wrap items-center justify-between gap-3">
         {workout.sport === 'Run' && workout.steps.length > 0 ? (
           <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none min-h-[40px]">
@@ -366,7 +376,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
             className="min-h-[40px] px-3 py-1.5 rounded-lg text-xs font-semibold text-sky-400 hover:bg-slate-800/80 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? 'COPIED' : 'COPY'}</span>
+            <span>{copied ? tr('detail.copied', 'COPIED') : tr('detail.copy', 'COPY')}</span>
           </button>
 
           <button
@@ -376,7 +386,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
             title="Download structured workout text file"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">EXPORT</span>
+            <span className="hidden sm:inline">{tr('detail.export', 'EXPORT')}</span>
           </button>
 
           <button
@@ -388,7 +398,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
                 : 'text-slate-300 hover:text-white hover:bg-slate-800'
             }`}
           >
-            {workout.complianceStatus === 'completed' ? 'COMPLETED ✓' : 'MARK DONE'}
+            {workout.complianceStatus === 'completed'
+              ? tr('detail.completed', 'COMPLETED ✓')
+              : tr('detail.mark_done', 'MARK DONE')}
           </button>
 
           <button
@@ -396,10 +408,11 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
             onClick={onClose}
             className="min-h-[40px] px-3.5 py-1.5 rounded-lg text-xs font-semibold text-sky-400 hover:bg-slate-800/80 transition-colors cursor-pointer whitespace-nowrap"
           >
-            CLOSE
+            {tr('detail.close', 'CLOSE')}
           </button>
         </div>
       </div>
     </div>
   );
 };
+

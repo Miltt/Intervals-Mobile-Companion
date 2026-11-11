@@ -18,6 +18,7 @@ interface CompletedActivityDetailProps {
   onClose: () => void;
   onPrevActivity?: () => void;
   onNextActivity?: () => void;
+  t?: (key: string, params?: Record<string, string | number>) => string;
 }
 
 type DetailTab = 'TIMELINE' | 'PACE_POWER' | 'HR_ZONES' | 'INTERVALS';
@@ -45,7 +46,10 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
   onClose,
   onPrevActivity,
   onNextActivity,
+  t,
 }) => {
+  const tr = (key: string, fallback: string, params?: Record<string, string | number>) =>
+    t ? t(key, params) : fallback;
   const [activeTab, setActiveTab] = useState<DetailTab>('TIMELINE');
   const [intervalFilter, setIntervalFilter] = useState<IntervalFilter>('ALL');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -189,7 +193,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Calendar</span>
+            <span>{tr('activity.back_calendar', 'Calendar')}</span>
           </button>
 
           <div className="flex items-center gap-1 ml-1">
@@ -235,7 +239,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
         </button>
       </div>
 
-      {/* Dense Athlete Telemetry Header — Matches Screenshot 2 */}
+      {/* Dense Athlete Telemetry Header */}
       <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-[#161923]">
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 text-xs font-mono tabular-nums">
           {/* Col 1: Core Distance & Duration */}
@@ -269,20 +273,20 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           {/* Col 2: Pace & GAP */}
           <div className="space-y-1">
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Pace</span>
+              <span className="text-slate-400 font-sans">{tr('activity.pace', 'Pace')}</span>
               <span className="font-bold text-cyan-300">{activity.paceFormatted || '—'}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">GAP</span>
+              <span className="text-slate-400 font-sans">{tr('activity.gap', 'GAP')}</span>
               <span className="font-bold text-slate-100">{activity.gapFormatted || '—'}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Threshold</span>
+              <span className="text-slate-400 font-sans">{tr('activity.threshold', 'Threshold')}</span>
               <span className="text-slate-200">{activity.thresholdPaceFormatted || '3:20/km'}</span>
             </div>
             {activity.compliancePct !== undefined && (
               <div className="flex justify-between gap-2">
-                <span className="text-slate-400 font-sans">Compliance</span>
+                <span className="text-slate-400 font-sans">{tr('activity.compliance', 'Compliance')}</span>
                 <span className="font-bold text-amber-400">✓ {activity.compliancePct}%</span>
               </div>
             )}
@@ -291,23 +295,23 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           {/* Col 3: Intensity, Load, RPE, Feel */}
           <div className="space-y-1">
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Intensity</span>
+              <span className="text-slate-400 font-sans">{tr('detail.intensity', 'Intensity')}</span>
               <span className="font-bold text-slate-100">
                 {activity.intensityPct !== undefined ? `${activity.intensityPct}%` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Load</span>
+              <span className="text-slate-400 font-sans">{tr('detail.load', 'Load')}</span>
               <span className="font-bold text-slate-100">{activity.load}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">RPE / Feel</span>
+              <span className="text-slate-400 font-sans">{tr('activity.rpe_feel', 'RPE / Feel')}</span>
               <span className="text-emerald-400 font-semibold">
                 {activity.rpe ?? 2} · {activity.feel || 'Good'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Class</span>
+              <span className="text-slate-400 font-sans">{tr('activity.class', 'Class')}</span>
               <span className="text-slate-200">{activity.trainingClass || 'Base'}</span>
             </div>
           </div>
@@ -315,13 +319,13 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           {/* Col 4: Heart Rate & TRIMP */}
           <div className="space-y-1">
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Avg HR</span>
+              <span className="text-slate-400 font-sans">{tr('activity.avg_hr', 'Avg HR')}</span>
               <span className="font-bold text-rose-400">
                 {activity.avgHr} bpm {activity.avgHrPct ? `(${activity.avgHrPct}%)` : ''}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Max HR</span>
+              <span className="text-slate-400 font-sans">{tr('activity.max_hr', 'Max HR')}</span>
               <span className="text-slate-200">
                 {activity.maxHr ?? '—'} bpm {activity.maxHrPct ? `(${activity.maxHrPct}%)` : ''}
               </span>
@@ -331,7 +335,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
               <span className="text-slate-200">{activity.trimp ?? 89}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Cadence</span>
+              <span className="text-slate-400 font-sans">{tr('activity.cadence', 'Cadence')}</span>
               <span className="text-fuchsia-300">
                 {activity.cadence ? `${activity.cadence} spm` : '—'}
               </span>
@@ -341,23 +345,23 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           {/* Col 5: Power & Efficiency */}
           <div className="space-y-1">
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Norm Power</span>
+              <span className="text-slate-400 font-sans">{tr('activity.norm_power', 'Norm Power')}</span>
               <span className="font-bold text-purple-300">
                 {activity.normPower ? `${activity.normPower}w` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Avg Power</span>
+              <span className="text-slate-400 font-sans">{tr('activity.avg_power', 'Avg Power')}</span>
               <span className="text-slate-200">
                 {activity.avgPower ? `${activity.avgPower}w` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Variability</span>
+              <span className="text-slate-400 font-sans">{tr('activity.variability', 'Variability')}</span>
               <span className="text-slate-200">{activity.variabilityIndex ?? '0.99'}</span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Efficiency</span>
+              <span className="text-slate-400 font-sans">{tr('activity.efficiency', 'Efficiency')}</span>
               <span className="text-slate-200">{activity.efficiencyFactor ?? '2.20'}</span>
             </div>
           </div>
@@ -365,14 +369,14 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           {/* Col 6: Fitness / Fatigue / Form / Energy */}
           <div className="space-y-1">
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Fitness / Fatigue</span>
+              <span className="text-slate-400 font-sans">{tr('activity.fitness_fatigue', 'Fitness / Fatigue')}</span>
               <span>
                 <strong className="text-sky-400">{activity.fitness}</strong> /{' '}
                 <strong className="text-purple-400">{activity.fatigue}</strong>
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Form</span>
+              <span className="text-slate-400 font-sans">{tr('activity.form', 'Form')}</span>
               <span
                 className={`font-bold ${
                   activity.form >= 0 ? 'text-amber-400' : 'text-emerald-400'
@@ -382,13 +386,13 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Work</span>
+              <span className="text-slate-400 font-sans">{tr('activity.work', 'Work')}</span>
               <span className="text-slate-200">
                 {activity.workKj ? `${activity.workKj} kJ` : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
-              <span className="text-slate-400 font-sans">Calories</span>
+              <span className="text-slate-400 font-sans">{tr('activity.calories', 'Calories')}</span>
               <span className="text-slate-200">{activity.calories ?? '—'} kcal</span>
             </div>
           </div>
@@ -399,10 +403,15 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
       <div className="px-4 sm:px-6 border-b border-slate-800/80 bg-[#12151e] flex items-center gap-2 overflow-x-auto no-scrollbar">
         {(
           [
-            { id: 'TIMELINE', label: 'TIMELINE' },
-            { id: 'PACE_POWER', label: 'POWER & PACE' },
-            { id: 'HR_ZONES', label: 'HR & ZONES' },
-            { id: 'INTERVALS', label: `INTERVALS (${activity.intervals.length})` },
+            { id: 'TIMELINE', label: tr('activity.tab.timeline', 'TIMELINE') },
+            { id: 'PACE_POWER', label: tr('activity.tab.power_pace', 'POWER & PACE') },
+            { id: 'HR_ZONES', label: tr('activity.tab.hr_zones', 'HR & ZONES') },
+            {
+              id: 'INTERVALS',
+              label: tr('activity.tab.intervals', `INTERVALS (${activity.intervals.length})`, {
+                count: activity.intervals.length,
+              }),
+            },
           ] as { id: DetailTab; label: string }[]
         ).map((tab) => (
           <button

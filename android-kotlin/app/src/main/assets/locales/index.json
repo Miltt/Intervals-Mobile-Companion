@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "repository": "https://github.com/Miltt/Intervals-Mobile-Companion",
+  "rawBaseUrl": "https://raw.githubusercontent.com/Miltt/Intervals-Mobile-Companion/main/public/locales",
+  "languages": [
+    {
+      "code": "en",
+      "name": "English",
+      "nativeName": "English",
+      "flag": "🇬🇧",
+      "file": "en.json"
+    },
+    {
+      "code": "de",
+      "name": "German",
+      "nativeName": "Deutsch",
+      "flag": "🇩🇪",
+      "file": "de.json"
+    },
+    {
+      "code": "ru",
+      "name": "Russian",
+      "nativeName": "Русский",
+      "flag": "🇷🇺",
+      "file": "ru.json"
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "nativeName": "Français",
+      "flag": "🇫🇷",
+      "file": "fr.json"
+    },
+    {
+      "code": "it",
+      "name": "Italian",
+      "nativeName": "Italiano",
+      "flag": "🇮🇹",
+      "file": "it.json"
+    }
+  ]
+}

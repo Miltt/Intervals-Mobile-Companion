@@ -14,12 +14,14 @@ interface CompletedCardProps {
   activity: CompletedActivity;
   isSelected?: boolean;
   onSelect: (activity: CompletedActivity) => void;
+  t?: (key: string, params?: Record<string, string | number>) => string;
 }
 
 interface PlannedCardProps {
   workout: PlannedWorkout;
   isSelected?: boolean;
   onSelect: (workout: PlannedWorkout) => void;
+  t?: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function SportMiniIcon({ sport }: { sport: SportType }) {
@@ -43,6 +45,7 @@ export const CompletedActivityCard: React.FC<CompletedCardProps> = ({
   activity,
   isSelected,
   onSelect,
+  t,
 }) => {
   const isRun = activity.sport === 'Run';
   const headerBg = isRun
@@ -61,7 +64,7 @@ export const CompletedActivityCard: React.FC<CompletedCardProps> = ({
           : 'border-slate-800/90 hover:border-slate-600'
       }`}
     >
-      {/* Top Bar: Sport Icon + Duration + Distance (Matches Screenshot 1) */}
+      {/* Top Bar: Sport Icon + Duration + Distance */}
       <div
         className={`px-3 py-1.5 ${headerBg} flex items-center justify-between gap-2 font-mono tabular-nums text-xs font-bold text-slate-100`}
       >
@@ -74,7 +77,7 @@ export const CompletedActivityCard: React.FC<CompletedCardProps> = ({
         )}
       </div>
 
-      {/* Body Metrics — Matches Screenshot 1 */}
+      {/* Body Metrics */}
       <div className="p-3 space-y-1.5 text-center font-mono tabular-nums text-xs">
         <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5">
           <span className="text-rose-400 font-semibold">{activity.avgHr}bpm</span>
@@ -86,7 +89,9 @@ export const CompletedActivityCard: React.FC<CompletedCardProps> = ({
           )}
         </div>
 
-        <div className="text-slate-100 font-semibold">Load {activity.load}</div>
+        <div className="text-slate-100 font-semibold">
+          {t ? t('card.load', { load: activity.load }) : `Load ${activity.load}`}
+        </div>
 
         {activity.gapFormatted && (
           <div className="text-purple-300 text-[11px]">GAP {activity.gapFormatted}</div>
@@ -131,6 +136,7 @@ export const PlannedWorkoutCard: React.FC<PlannedCardProps> = ({
   workout,
   isSelected,
   onSelect,
+  t,
 }) => {
   const isRun = workout.sport === 'Run';
   const hasIntervals = workout.steps.some((s) => s.zone === 'Z4' || s.zone === 'Z5');
@@ -180,11 +186,11 @@ export const PlannedWorkoutCard: React.FC<PlannedCardProps> = ({
       <div className="p-3 space-y-2 text-center">
         {workout.load !== undefined && workout.load > 0 && (
           <div className="font-mono tabular-nums text-xs font-bold text-slate-100">
-            Load {workout.load}
+            {t ? t('card.load', { load: workout.load }) : `Load ${workout.load}`}
           </div>
         )}
 
-        {/* Mini Pace Step Preview Diagram (Matches Friday Oct 30 Fartlek card in Screenshot 1) */}
+        {/* Mini Pace Step Preview Diagram (Shown only for Running workouts) */}
         {isRun && workout.steps.length > 0 && (
           <div className="w-full h-7 bg-[#12151e] rounded-xs px-0.5 pt-1 flex items-end gap-[1px] overflow-hidden border border-slate-800/70">
             {workout.steps.map((step) => {
@@ -212,17 +218,23 @@ export const PlannedWorkoutCard: React.FC<PlannedCardProps> = ({
         </div>
 
         <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 font-mono tabular-nums">
-          <span>Planned</span>
+          <span>{t ? t('card.planned') : 'Planned'}</span>
           {workout.intensityPct !== undefined && (
             <>
               <span>·</span>
-              <span>{workout.intensityPct}% Int</span>
+              <span>
+                {t
+                  ? t('card.intensity', { pct: workout.intensityPct })
+                  : `${workout.intensityPct}% Int`}
+              </span>
             </>
           )}
           {workout.complianceStatus === 'completed' && (
             <>
               <span>·</span>
-              <span className="text-emerald-400 font-semibold">Done ✓</span>
+              <span className="text-emerald-400 font-semibold">
+                {t ? t('card.done') : 'Done ✓'}
+              </span>
             </>
           )}
         </div>
@@ -237,3 +249,4 @@ export const PlannedWorkoutCard: React.FC<PlannedCardProps> = ({
     </button>
   );
 };
+

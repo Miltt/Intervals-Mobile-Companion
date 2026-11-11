@@ -91,10 +91,56 @@ function normalizeSport(rawType?: string): SportType {
   return 'Run';
 }
 
+// Extracts the athlete's Running Threshold Pace (100% reference pace) directly from Intervals.icu API payloads.
+// Intervals.icu stores threshold_pace in meters/second inside athlete.sportSettings (for Run), workout_doc, or activity.icu_threshold_pace.
+export function extractIntervalsThresholdPaceSecPerKm(payload: {
+  athlete?: Record<string, unknown> | null;
+  events?: Array<Record<string, unknown>>;
+  activities?: Array<Record<string, unknown>>;
+}): number {
+  // 1. Check athlete.sportSettings for Run threshold_pace (m/s)
+  const sportSettings = payload.athlete?.sportSettings;
+  if (Array.isArray(sportSettings)) {
+    for (const s of sportSettings) {
+      const setting = s as Record<string, unknown>;
+      const types = Array.isArray(setting.types) ? setting.types.map(String) : [];
+      const tpMs = Number(setting.threshold_pace || 0);
+      if (types.some((t) => t.toLowerCase().includes('run')) && tpMs > 0) {
+        return Math.round(1000 / tpMs);
+      }
+    }
+  }
+
+  // 2. Check resolved events workout_doc.threshold_pace (m/s)
+  if (Array.isArray(payload.events)) {
+    for (const ev of payload.events) {
+      const doc = ev.workout_doc as Record<string, unknown> | undefined;
+      const tpMs = Number(doc?.threshold_pace || ev.threshold_pace || 0);
+      if (tpMs > 0) {
+        return Math.round(1000 / tpMs);
+      }
+    }
+  }
+
+  // 3. Check activities icu_threshold_pace (m/s)
+  if (Array.isArray(payload.activities)) {
+    for (const act of payload.activities) {
+      const tpMs = Number(act.icu_threshold_pace || 0);
+      if (tpMs > 0) {
+        return Math.round(1000 / tpMs);
+      }
+    }
+  }
+
+  // Fallback to 200 sec/km (3:20/km) when in offline demo mode
+  return 200;
+}
+
 // Merges live API events, activities, and wellness into our WeekSummary list when live sync returns data
 export function mergeLiveIntervalsPayload(
   baseWeeks: WeekSummary[],
   payload: {
+    athlete?: Record<string, unknown> | null;
     events?: Array<Record<string, unknown>>;
     activities?: Array<Record<string, unknown>>;
     wellness?: Array<Record<string, unknown>>;
@@ -107,6 +153,9 @@ export function mergeLiveIntervalsPayload(
   ) {
     return baseWeeks;
   }
+
+  const thresholdSecPerKm = extractIntervalsThresholdPaceSecPerKm(payload);
+  const thresholdFormatted = formatPaceSecPerKm(thresholdSecPerKm);
 
   // Deep clone base weeks so we can overlay live dates or populate matching dates
   const cloned: WeekSummary[] = JSON.parse(JSON.stringify(baseWeeks));
@@ -135,6 +184,12 @@ export function mergeLiveIntervalsPayload(
       const intensity = Number(ev.icu_intensity || 70);
       const name = String(ev.name || `Scheduled ${sport}`);
 
+      const pctMin = Math.max(60, intensity - 4);
+      const pctMax = Math.min(105, intensity + 4);
+      const paceFastSec = Math.round(thresholdSecPerKm / (pctMax / 100));
+      const paceSlowSec = Math.round(thresholdSecPerKm / (pctMin / 100));
+      const paceMidSec = Math.round((paceFastSec + paceSlowSec) / 2);
+
       const steps: WorkoutStepBlock[] = [
         {
           id: `live-step-${ev.id || Math.random()}`,
@@ -143,11 +198,11 @@ export function mergeLiveIntervalsPayload(
           startSec: 0,
           endSec: durationSec,
           distanceKm: distanceKm || 0,
-          pctPaceMin: Math.max(60, intensity - 4),
-          pctPaceMax: Math.min(105, intensity + 4),
-          paceMinFormatted: '4:15',
-          paceMaxFormatted: '4:35',
-          paceMidSecPerKm: 265,
+          pctPaceMin: pctMin,
+          pctPaceMax: pctMax,
+          paceMinFormatted: formatPaceShort(paceFastSec),
+          paceMaxFormatted: formatPaceShort(paceSlowSec),
+          paceMidSecPerKm: paceMidSec,
           zone: (intensity >= 85 ? 'Z4' : intensity >= 76 ? 'Z2' : 'Z1') as TrainingZone,
           color: intensity >= 85 ? '#ea580c' : '#0d9488',
         },
@@ -174,7 +229,7 @@ export function mergeLiveIntervalsPayload(
                 text: String(ev.description || `${formatDurationCompact(durationSec)} @ ${Math.round(intensity)}% Intensity`),
                 durationLabel: formatDurationCompact(durationSec),
                 pctRangeLabel: `${Math.round(intensity)}%`,
-                paceRangeLabel: 'Target',
+                paceRangeLabel: `${formatPaceShort(paceFastSec)}-${formatPaceSecPerKm(paceSlowSec)}`,
                 distanceLabel: distanceKm ? `${distanceKm}km` : '—',
                 zone: 'Z1',
               },
@@ -212,6 +267,9 @@ export function mergeLiveIntervalsPayload(
       const paceSec = avgSpeedMs > 0 ? Math.round(1000 / avgSpeedMs) : 320;
       const avgHr = Number(act.average_heartrate || 130);
       const avgWatts = Number(act.icu_average_watts || act.average_watts || 270);
+      const actTpMs = Number(act.icu_threshold_pace || 0);
+      const actThresholdFormatted =
+        actTpMs > 0 ? formatPaceSecPerKm(Math.round(1000 / actTpMs)) : thresholdFormatted;
 
       const streams: ActivityStreamPoint[] = Array.from({ length: 40 }, (_, idx) => ({
         timeSec: Math.round((idx / 39) * movingTimeSec),
@@ -237,6 +295,7 @@ export function mergeLiveIntervalsPayload(
         movingTimeLabel: formatDurationCompact(movingTimeSec),
         paceFormatted: distanceKm && sport === 'Run' ? formatPaceSecPerKm(paceSec) : undefined,
         gapFormatted: distanceKm && sport === 'Run' ? formatPaceSecPerKm(paceSec) : undefined,
+        thresholdPaceFormatted: sport === 'Run' ? actThresholdFormatted : undefined,
         load: Number(act.icu_training_load || 40),
         avgHr,
         maxHr: Number(act.max_heartrate || avgHr + 14),
@@ -255,3 +314,4 @@ export function mergeLiveIntervalsPayload(
 
   return cloned;
 }
+

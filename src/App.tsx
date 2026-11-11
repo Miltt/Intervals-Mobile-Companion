@@ -43,6 +43,7 @@ import { KotlinExportModal } from './components/KotlinExportModal';
 import { AndroidEmulatorFrame } from './components/AndroidEmulatorFrame';
 import { SettingsScreen } from './components/SettingsScreen';
 import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
+import { useLocalization } from './i18n/useTranslation';
 
 // v4 cache key stores full multi-sport dataset including Swimming (Swim)
 const CACHE_STORAGE_KEY = 'intervals_icu_companion_cache_v4';
@@ -95,6 +96,12 @@ export default function App() {
     }
     return DEFAULT_APP_SETTINGS;
   });
+
+  const {
+    t,
+    availableLanguages,
+    syncLanguagesFromGitHub,
+  } = useLocalization(settings.language || 'en');
 
   const [systemPrefersLight, setSystemPrefersLight] = useState<boolean>(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
@@ -400,10 +407,15 @@ export default function App() {
     lastScrollTopRef.current = currentScrollTop;
   }, []);
 
-  // Pull-down gesture handlers (supports both touch and mouse drag from top of scroll container)
+  // Pull-down gesture handlers (disabled inside Settings)
   const beginPull = (clientY: number) => {
     const scroller = scrollContainerRef.current;
-    if (!scroller || scroller.scrollTop > 2 || syncState.isSyncing) {
+    if (
+      !scroller ||
+      scroller.scrollTop > 2 ||
+      syncState.isSyncing ||
+      activeSection === 'settings'
+    ) {
       pullStartYRef.current = null;
       isPullingRef.current = false;
       return;
@@ -447,12 +459,6 @@ export default function App() {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
     setShowFloatingBottomBar(true);
-  };
-
-  const handleClearCache = () => {
-    localStorage.removeItem(CACHE_STORAGE_KEY);
-    setRawWeeks(INITIAL_WEEKS_DATA);
-    setSyncToast('Local workout cache reset to default schedule.');
   };
 
   const handleToggleWorkoutComplete = (workoutId: string) => {
@@ -525,7 +531,8 @@ export default function App() {
     });
   };
 
-  const showPullIndicator = pullDistance > 6 || syncState.isSyncing;
+  const showPullIndicator =
+    activeSection !== 'settings' && (pullDistance > 6 || syncState.isSyncing);
   const isReadyToRelease = pullDistance >= PULL_REFRESH_THRESHOLD;
 
   const formatDist = (km?: number, fallback?: string) => {
@@ -579,10 +586,17 @@ export default function App() {
           isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0f1117] text-slate-100'
         }`}
       >
-        {/* Android Pull-Down to Force Collect Indicator */}
+        {/* Android Pull-Down to Force Collect Indicator (Hidden in Settings) */}
         <div
           style={{
-            height: syncState.isSyncing ? 48 : pullDistance > 0 ? Math.min(68, pullDistance) : 0,
+            height:
+              activeSection === 'settings'
+                ? 0
+                : syncState.isSyncing
+                ? 48
+                : pullDistance > 0
+                ? Math.min(68, pullDistance)
+                : 0,
             opacity: showPullIndicator ? 1 : 0,
           }}
           className={`w-full overflow-hidden flex items-center justify-center border-b transition-all duration-150 shrink-0 z-20 ${
@@ -601,17 +615,17 @@ export default function App() {
             {syncState.isSyncing ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-500" />
-                <span>Force collecting workouts from Intervals.icu...</span>
+                <span>{t('pull.syncing')}</span>
               </>
             ) : isReadyToRelease ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 text-emerald-500 rotate-180 transition-transform" />
-                <span className="text-emerald-500">Release to Force Collect</span>
+                <span className="text-emerald-500">{t('pull.release')}</span>
               </>
             ) : (
               <>
                 <ArrowDown className="w-3.5 h-3.5 text-cyan-500" />
-                <span>Pull down to Force Collect</span>
+                <span>{t('pull.pull_down')}</span>
               </>
             )}
           </div>
@@ -652,51 +666,51 @@ export default function App() {
           )}
 
           <main className="max-w-5xl mx-auto px-3.5 sm:px-5 pt-3.5 space-y-3.5">
-            {/* Scrollable "intervals.icu" header + Icon-only Settings button in top right corner */}
-            <div className="flex items-center justify-between gap-2 pt-0.5 px-0.5">
-              <div>
+            {/* Scrollable "intervals.icu" header + Icon-only Settings button (Hidden in Settings) */}
+            {activeSection !== 'settings' && (
+              <div className="flex items-center justify-between gap-2 pt-0.5 px-0.5">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedItem(null);
+                      setActiveSection('calendar');
+                    }}
+                    className={`text-xl font-extrabold tracking-tight cursor-pointer ${
+                      isLight ? 'text-slate-900' : 'text-white'
+                    }`}
+                  >
+                    intervals.icu
+                  </button>
+                  <div className="text-[11px] font-mono tabular-nums text-slate-400">
+                    {t('app.subtitle.pull_to_sync')} · {syncTiming.lastSyncLabel} ·{' '}
+                    {settings.autoSyncHours === 0
+                      ? t('app.subtitle.manual_sync')
+                      : t('app.subtitle.auto_hours', { hours: settings.autoSyncHours })}
+                  </div>
+                </div>
+
+                {/* Icon-Only Settings Button in Top-Right Corner */}
                 <button
                   type="button"
                   onClick={() => {
+                    setIsFilterPopoverOpen(false);
                     setSelectedItem(null);
-                    setActiveSection('calendar');
+                    setActiveSection('settings');
+                    scrollToTop();
                   }}
-                  className={`text-xl font-extrabold tracking-tight cursor-pointer ${
-                    isLight ? 'text-slate-900' : 'text-white'
+                  aria-label={t('nav.settings')}
+                  title={t('nav.settings')}
+                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                    isLight
+                      ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
+                      : 'bg-[#161923] border-slate-800 text-slate-200 hover:border-slate-700'
                   }`}
                 >
-                  intervals.icu
+                  <Settings className="w-5 h-5" />
                 </button>
-                <div className="text-[11px] font-mono tabular-nums text-slate-400">
-                  Pull down to sync · {syncTiming.lastSyncLabel} ·{' '}
-                  {settings.autoSyncHours === 0
-                    ? 'Manual sync'
-                    : `Auto ${settings.autoSyncHours}h`}
-                </div>
               </div>
-
-              {/* Icon-Only Settings Button in Top-Right Corner */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFilterPopoverOpen(false);
-                  setSelectedItem(null);
-                  setActiveSection((prev) => (prev === 'settings' ? 'calendar' : 'settings'));
-                  scrollToTop();
-                }}
-                aria-label="Settings"
-                title="Settings"
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                  activeSection === 'settings' && !selectedItem
-                    ? 'bg-[#3b388f] border-indigo-400/60 text-white shadow-md'
-                    : isLight
-                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
-                    : 'bg-[#161923] border-slate-800 text-slate-200 hover:border-slate-700'
-                }`}
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-            </div>
+            )}
 
             {/* Detailed View when a Scheduled Workout or Completed Activity is clicked */}
             {selectedItem ? (
@@ -704,6 +718,7 @@ export default function App() {
                 {selectedItem.type === 'planned' ? (
                   <PlannedWorkoutDetail
                     workout={selectedItem.workout}
+                    t={t}
                     onClose={() => {
                       setSelectedItem(null);
                       setShowFloatingBottomBar(true);
@@ -713,6 +728,7 @@ export default function App() {
                 ) : (
                   <CompletedActivityDetail
                     activity={selectedItem.activity}
+                    t={t}
                     onClose={() => {
                       setSelectedItem(null);
                       setShowFloatingBottomBar(true);
@@ -723,21 +739,21 @@ export default function App() {
                 )}
               </section>
             ) : activeSection === 'settings' ? (
-              /* Dedicated Android Settings Menu (No return/back button) */
+              /* Dedicated Android Settings Menu */
               <SettingsScreen
                 settings={settings}
                 isLight={isLight}
-                isSyncing={syncState.isSyncing}
                 lastSyncLabel={syncTiming.lastSyncLabel}
                 nextSyncLabel={syncTiming.nextSyncLabel}
+                t={t}
+                availableLanguages={availableLanguages}
+                onSyncLanguagesFromGitHub={syncLanguagesFromGitHub}
                 onUpdateSettings={handleUpdateSettings}
-                onTriggerSync={() => performSync(true)}
                 onOpenWebLogin={() => setShowWebLoginSheet(true)}
                 onLogout={() => {
                   fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
                   handleUpdateSettings({ isLoggedIn: false });
                 }}
-                onClearCache={handleClearCache}
               />
             ) : activeSection === 'incoming' ? (
               /* Dedicated Clean Incoming Coach Workouts View (Install App link removed) */
@@ -750,9 +766,15 @@ export default function App() {
                   }`}
                 >
                   <div>
-                    <h1 className="text-sm sm:text-base font-bold">Incoming Coach Workouts</h1>
+                    <h1 className="text-sm sm:text-base font-bold">
+                      {t('incoming.title')}
+                    </h1>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Showing {Array.from(activeSportSet).join(', ')} workouts · Tap any card for details
+                      {t('incoming.subtitle', {
+                        sports: Array.from(activeSportSet)
+                          .map((s) => t(`sport.${s}`))
+                          .join(', '),
+                      })}
                     </p>
                   </div>
                 </div>
@@ -916,15 +938,18 @@ export default function App() {
 
                     <div className="text-center">
                       <div className="text-xs sm:text-sm font-bold">
-                        Week {activeWeek.weekNumber} · {activeWeek.dateRangeLabel}
+                        {t('calendar.week', { num: activeWeek.weekNumber })} · {activeWeek.dateRangeLabel}
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono tabular-nums">
                         {feedFilter === 'all'
-                          ? 'All Statuses'
+                          ? t('calendar.status.all')
                           : feedFilter === 'scheduled'
-                          ? 'Incoming Only'
-                          : 'Done Only'}{' '}
-                        · {Array.from(activeSportSet).join(', ')}
+                          ? t('calendar.status.incoming')
+                          : t('calendar.status.done')}{' '}
+                        ·{' '}
+                        {Array.from(activeSportSet)
+                          .map((s) => t(`sport.${s}`))
+                          .join(', ')}
                       </div>
                     </div>
 
@@ -965,7 +990,7 @@ export default function App() {
                           : 'bg-[#11141d] text-slate-300 border-slate-800/80 hover:border-slate-700'
                       }`}
                     >
-                      All Week
+                      {t('calendar.all_week')}
                     </button>
 
                     {activeWeek.days.map((day) => {
@@ -1066,7 +1091,9 @@ export default function App() {
                             {day.dayShort} {day.dayNumber} {day.monthShort}
                           </span>
                           {day.isToday && (
-                            <span className="text-[11px] font-medium text-sky-500">Today</span>
+                            <span className="text-[11px] font-medium text-sky-500">
+                              {t('calendar.today')}
+                            </span>
                           )}
                         </div>
 
@@ -1077,6 +1104,7 @@ export default function App() {
                               <PlannedWorkoutCard
                                 key={workout.id}
                                 workout={workout}
+                                t={t}
                                 onSelect={handleSelectPlanned}
                               />
                             ))}
@@ -1090,6 +1118,7 @@ export default function App() {
                               <CompletedActivityCard
                                 key={activity.id}
                                 activity={activity}
+                                t={t}
                                 onSelect={handleSelectCompleted}
                               />
                             ))}
@@ -1098,7 +1127,7 @@ export default function App() {
 
                         {scheduledList.length === 0 && completedList.length === 0 && (
                           <div className="py-3 text-center text-[11px] text-slate-400">
-                            Rest / No matching workout
+                            {t('calendar.rest_empty')}
                           </div>
                         )}
                       </div>
@@ -1123,7 +1152,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
                 <span className="text-xs font-bold uppercase tracking-wider font-mono">
-                  Calendar &amp; Workout Filter
+                  {t('filter.title')}
                 </span>
               </div>
               <button
@@ -1139,7 +1168,7 @@ export default function App() {
             {/* 1. Status Filter Slider: All, Incoming, Done */}
             <div className="pt-3 space-y-1.5">
               <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
-                Workout Status
+                {t('filter.status_label')}
               </div>
               <div
                 className={`grid grid-cols-3 gap-1 p-1 rounded-2xl border ${
@@ -1150,9 +1179,9 @@ export default function App() {
               >
                 {(
                   [
-                    { id: 'all', label: 'All' },
-                    { id: 'scheduled', label: 'Incoming' },
-                    { id: 'completed', label: 'Done' },
+                    { id: 'all', label: t('filter.status.all') },
+                    { id: 'scheduled', label: t('filter.status.incoming') },
+                    { id: 'completed', label: t('filter.status.done') },
                   ] as { id: FeedFilter; label: string }[]
                 ).map((f) => (
                   <button
@@ -1177,7 +1206,7 @@ export default function App() {
             <div className="pt-3.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
-                  Workout Types (Enabled in Settings)
+                  {t('filter.types_label')}
                 </span>
                 <button
                   type="button"
@@ -1187,7 +1216,7 @@ export default function App() {
                   }}
                   className="text-[11px] font-semibold text-indigo-400 hover:underline cursor-pointer"
                 >
-                  Select All
+                  {t('filter.select_all')}
                 </button>
               </div>
 
@@ -1217,7 +1246,7 @@ export default function App() {
                             isLight && isChecked ? 'text-slate-900' : ''
                           }`}
                         >
-                          {item.label}
+                          {t(`sport.${item.sport}`)}
                         </span>
                       </div>
                       <div
@@ -1237,7 +1266,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Google Photos-Style Floating Bottom Dock + Detached Circular Filter Button */}
+        {/* Google Photos-Style Floating Bottom Dock + Detached Circular Filter Button (Hidden in Settings) */}
+        {activeSection !== 'settings' && (
         <div
           aria-label="App navigation and filter"
           className={`absolute bottom-4 left-4 right-4 z-30 flex items-center justify-center gap-3 pointer-events-none transition-all duration-300 ${
@@ -1269,7 +1299,7 @@ export default function App() {
               }`}
             >
               <Calendar className="w-4 h-4 shrink-0" />
-              <span>Calendar</span>
+              <span>{t('nav.calendar')}</span>
             </button>
 
             <button
@@ -1287,7 +1317,7 @@ export default function App() {
               }`}
             >
               <CalendarClock className="w-4 h-4 shrink-0" />
-              <span>Incoming</span>
+              <span>{t('nav.incoming')}</span>
             </button>
           </div>
 
@@ -1295,8 +1325,8 @@ export default function App() {
           <button
             type="button"
             onClick={() => setIsFilterPopoverOpen((prev) => !prev)}
-            aria-label="Filter workouts"
-            title="Filter by status and workout types"
+            aria-label={t('nav.filter')}
+            title={t('nav.filter')}
             className={`pointer-events-auto relative w-14 h-14 rounded-full border shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all cursor-pointer shrink-0 ${
               isFilterPopoverOpen || hasCustomFilterActive
                 ? 'bg-[#3b388f] border-indigo-400/70 text-white'
@@ -1311,6 +1341,7 @@ export default function App() {
             )}
           </button>
         </div>
+        )}
 
         {showWebLoginSheet && (
           <IntervalsWebLoginSheet

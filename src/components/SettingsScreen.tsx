@@ -8,13 +8,13 @@ import {
   Clock,
   Gauge,
   Globe,
+  Info,
+  Languages,
   Laptop,
   LogOut,
   Moon,
-  RefreshCw,
   ShieldCheck,
   Sun,
-  Trash2,
   User,
   Wifi,
 } from 'lucide-react';
@@ -25,33 +25,35 @@ import {
   ThemeMode,
   UnitSystem,
 } from '../types/settings';
+import { LocaleMeta } from '../i18n/useTranslation';
 
 interface SettingsScreenProps {
   settings: AppSettings;
   isLight: boolean;
-  isSyncing: boolean;
   lastSyncLabel: string;
   nextSyncLabel: string;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  availableLanguages: LocaleMeta[];
+  onSyncLanguagesFromGitHub: () => Promise<number>;
   onUpdateSettings: (partial: Partial<AppSettings>) => void;
-  onTriggerSync: () => void;
   onOpenWebLogin: () => void;
   onLogout: () => void;
-  onClearCache: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   isLight,
-  isSyncing,
   lastSyncLabel,
   nextSyncLabel,
+  t,
+  availableLanguages,
+  onSyncLanguagesFromGitHub,
   onUpdateSettings,
-  onTriggerSync,
   onOpenWebLogin,
   onLogout,
-  onClearCache,
 }) => {
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
+  const [showLanguageInfo, setShowLanguageInfo] = useState<boolean>(false);
 
   const flashSaved = (msg: string) => {
     setSavedFeedback(msg);
@@ -74,9 +76,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
 
     onUpdateSettings({ enabledSports: next });
-    flashSaved(
-      `${sport} ${isChecked ? 'excluded from' : 'added to'} Calendar & Sync`
-    );
+    flashSaved(`${t(`sport.${sport}`)} ${isChecked ? '−' : '+'}`);
   };
 
   const cardClass = isLight
@@ -90,14 +90,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const subTextClass = isLight ? 'text-xs text-slate-600' : 'text-xs text-slate-400';
 
   return (
-    <div className="space-y-3.5 pb-8">
-      {/* Header Row (No return/back button) */}
+    <div className="space-y-3.5 pb-6">
+      {/* Top Section: Settings Title & Subtitle Only */}
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-base sm:text-lg font-extrabold tracking-tight">Settings</h1>
-          <p className={subTextClass}>
-            Intervals.icu web login, activity types, sync schedule &amp; appearance
-          </p>
+          <h1 className="text-base sm:text-lg font-extrabold tracking-tight">
+            {t('settings.title')}
+          </h1>
+          <p className={subTextClass}>{t('settings.subtitle')}</p>
         </div>
 
         {savedFeedback && (
@@ -108,12 +108,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         )}
       </div>
 
-      {/* 1. Intervals.icu Account — Simple & Transparent Web Browser Login (No Athlete ID or API Key needed) */}
+      {/* 1. Intervals.icu Account — Web Browser Login (No Sync Calendar Now button) */}
       <div className={cardClass}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-cyan-500" />
-            <span className={labelClass}>Intervals.icu Account</span>
+            <span className={labelClass}>{t('settings.account.title')}</span>
           </div>
           <span
             className={`text-[11px] font-mono px-2.5 py-0.5 rounded-full font-semibold ${
@@ -122,7 +122,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
             }`}
           >
-            {settings.isLoggedIn ? 'Connected' : 'Not Signed In'}
+            {settings.isLoggedIn
+              ? t('settings.account.connected')
+              : t('settings.account.not_signed_in')}
           </span>
         </div>
 
@@ -152,80 +154,130 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onOpenWebLogin}
+                className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+                  isLight
+                    ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                    : 'bg-[#10131b] border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{t('settings.account.switch')}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
-                  onTriggerSync();
-                  flashSaved('Syncing calendar with Intervals.icu...');
+                  onLogout();
+                  flashSaved(t('settings.account.not_signed_in'));
                 }}
-                disabled={isSyncing}
-                className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Syncing...' : 'Sync Calendar Now'}</span>
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{t('settings.account.logout')}</span>
               </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onOpenWebLogin}
-                  className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
-                    isLight
-                      ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                      : 'bg-[#10131b] border-slate-700 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <Globe className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Switch Account</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onLogout();
-                    flashSaved('Signed out of Intervals.icu');
-                  }}
-                  className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Log Out</span>
-                </button>
-              </div>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className={subTextClass}>
-              Sign in directly through the official Intervals.icu web login form in your browser. Your profile and workouts are linked automatically — no Athlete ID or API key needed.
-            </p>
+            <p className={subTextClass}>{t('settings.account.login_desc')}</p>
             <button
               type="button"
               onClick={onOpenWebLogin}
               className="w-full py-3 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
             >
               <Globe className="w-4 h-4" />
-              <span>Log in with Intervals.icu (Web Browser)</span>
+              <span>{t('settings.account.login_btn')}</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* 2. Activity Types to Upload & Display in Calendar */}
+      {/* 2. App Language — Compact Dropdown (Auto-fetches from GitHub on tap) + Info Hint Icon */}
+      <div className={cardClass}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Languages className="w-4 h-4 text-cyan-500 shrink-0" />
+            <span className={labelClass}>{t('settings.language.title')}</span>
+            <button
+              type="button"
+              onClick={() => setShowLanguageInfo((prev) => !prev)}
+              aria-label="Language info"
+              title="Language info"
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                showLanguageInfo
+                  ? 'bg-cyan-500/20 text-cyan-400'
+                  : isLight
+                  ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                  : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800'
+              }`}
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <select
+            value={settings.language}
+            onMouseDown={() => {
+              onSyncLanguagesFromGitHub().catch(() => {});
+            }}
+            onTouchStart={() => {
+              onSyncLanguagesFromGitHub().catch(() => {});
+            }}
+            onChange={(e) => {
+              const nextCode = e.target.value;
+              onUpdateSettings({ language: nextCode });
+              const found = availableLanguages.find((l) => l.code === nextCode);
+              if (found) {
+                flashSaved(`${found.flag} ${found.nativeName}`);
+              }
+            }}
+            className={`px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer focus:outline-none focus:border-cyan-500 ${
+              isLight
+                ? 'bg-slate-50 border-slate-300 text-slate-900'
+                : 'bg-[#10131b] border-slate-700 text-slate-100'
+            }`}
+          >
+            {availableLanguages.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.flag} {lang.nativeName} ({lang.code.toUpperCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {showLanguageInfo && (
+          <div
+            className={`p-3 rounded-xl border text-xs leading-relaxed ${
+              isLight
+                ? 'bg-cyan-50/60 border-cyan-200 text-slate-700'
+                : 'bg-[#10131b] border-cyan-500/30 text-slate-300'
+            }`}
+          >
+            {t('settings.language.desc')}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Activity Types to Upload & Display in Calendar */}
       <div className={cardClass}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-cyan-500" />
-            <span className={labelClass}>Activity Types to Upload &amp; Show in Calendar</span>
+            <span className={labelClass}>{t('settings.sports.title')}</span>
           </div>
           <span className="text-[11px] font-mono text-slate-400">
-            {settings.enabledSports.length} of {CONFIGURABLE_SPORT_TYPES.length} enabled
+            {t('settings.sports.enabled_count', {
+              enabled: settings.enabledSports.length,
+              total: CONFIGURABLE_SPORT_TYPES.length,
+            })}
           </span>
         </div>
 
-        <p className={subTextClass}>
-          Check the activity types you want to upload from Intervals.icu and display on the main screen. Checked types will also appear in the bottom-right Calendar Filter button.
-        </p>
+        <p className={subTextClass}>{t('settings.sports.desc')}</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {CONFIGURABLE_SPORT_TYPES.map((item) => {
@@ -251,8 +303,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     className="w-2.5 h-2.5 rounded-full shrink-0"
                   />
                   <div className="min-w-0">
-                    <div className="text-xs font-bold truncate">{item.label}</div>
-                    <div className="text-[11px] text-slate-400 truncate">{item.description}</div>
+                    <div className="text-xs font-bold truncate">
+                      {t(`sport.${item.sport}`)}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">
+                      {t(`sport.${item.sport}.desc`)}
+                    </div>
                   </div>
                 </div>
 
@@ -273,29 +329,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Auto-Sync Interval in Hours */}
+      {/* 4. Auto-Sync Interval in Hours */}
       <div className={cardClass}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-cyan-500" />
-            <span className={labelClass}>Auto-Sync Interval (WorkManager)</span>
+            <span className={labelClass}>{t('settings.autosync.title')}</span>
           </div>
           <span className="text-[11px] font-mono text-slate-400">
-            Last: {lastSyncLabel}
+            {t('settings.autosync.last', { time: lastSyncLabel })}
           </span>
         </div>
 
-        <p className={subTextClass}>
-          Choose how frequently Android <code>PeriodicWorkRequest</code> collects incoming workouts in the background. You can always pull down on the calendar to Force Collect.
-        </p>
+        <p className={subTextClass}>{t('settings.autosync.desc')}</p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(
             [
-              { hours: 6, label: 'Every 6h', sub: '4x per day' },
-              { hours: 12, label: 'Every 12h', sub: '2x/day (Default)' },
-              { hours: 24, label: 'Every 24h', sub: 'Once daily' },
-              { hours: 0, label: 'Manual Only', sub: 'Pull-to-refresh' },
+              {
+                hours: 6,
+                label: t('settings.autosync.6h'),
+                sub: t('settings.autosync.6h_sub'),
+              },
+              {
+                hours: 12,
+                label: t('settings.autosync.12h'),
+                sub: t('settings.autosync.12h_sub'),
+              },
+              {
+                hours: 24,
+                label: t('settings.autosync.24h'),
+                sub: t('settings.autosync.24h_sub'),
+              },
+              {
+                hours: 0,
+                label: t('settings.autosync.manual'),
+                sub: t('settings.autosync.manual_sub'),
+              },
             ] as { hours: 6 | 12 | 24 | 0; label: string; sub: string }[]
           ).map((item) => {
             const active = settings.autoSyncHours === item.hours;
@@ -305,11 +375,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateSettings({ autoSyncHours: item.hours });
-                  flashSaved(
-                    item.hours === 0
-                      ? 'Auto-sync disabled (Manual pull-down only)'
-                      : `Auto-sync set to every ${item.hours} hours`
-                  );
+                  flashSaved(item.label);
                 }}
                 className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                   active
@@ -328,39 +394,38 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         <div className="text-[11px] font-mono text-slate-400 flex items-center justify-between pt-0.5">
           <span>
-            Status:{' '}
             {settings.autoSyncHours === 0
-              ? 'Manual pull-down gesture only'
-              : `Active (${settings.autoSyncHours}h PeriodicWorkRequest)`}
+              ? t('settings.autosync.manual')
+              : `PeriodicWorkRequest (${settings.autoSyncHours}h)`}
           </span>
-          {settings.autoSyncHours > 0 && <span>Next auto-sync: {nextSyncLabel}</span>}
+          {settings.autoSyncHours > 0 && <span>{nextSyncLabel}</span>}
         </div>
       </div>
 
-      {/* 4. Theme Selector: System, Dark, Light Mode */}
+      {/* 5. Theme Selector: System, Dark, Light Mode */}
       <div className={cardClass}>
         <div className="flex items-center gap-2">
           <Sun className="w-4 h-4 text-cyan-500" />
-          <span className={labelClass}>Appearance (System / Dark / Light)</span>
+          <span className={labelClass}>{t('settings.theme.title')}</span>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           {(
             [
-              { id: 'system', label: 'System', icon: Laptop },
-              { id: 'dark', label: 'Dark', icon: Moon },
-              { id: 'light', label: 'Light', icon: Sun },
+              { id: 'system', label: t('settings.theme.system'), icon: Laptop },
+              { id: 'dark', label: t('settings.theme.dark'), icon: Moon },
+              { id: 'light', label: t('settings.theme.light'), icon: Sun },
             ] as { id: ThemeMode; label: string; icon: React.FC<{ className?: string }> }[]
-          ).map((t) => {
-            const Icon = t.icon;
-            const active = settings.themeMode === t.id;
+          ).map((themeOpt) => {
+            const Icon = themeOpt.icon;
+            const active = settings.themeMode === themeOpt.id;
             return (
               <button
-                key={t.id}
+                key={themeOpt.id}
                 type="button"
                 onClick={() => {
-                  onUpdateSettings({ themeMode: t.id });
-                  flashSaved(`Theme set to ${t.label}`);
+                  onUpdateSettings({ themeMode: themeOpt.id });
+                  flashSaved(themeOpt.label);
                 }}
                 className={`py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all cursor-pointer ${
                   active
@@ -371,25 +436,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 }`}
               >
                 <Icon className="w-4 h-4" />
-                <span>{t.label}</span>
+                <span>{themeOpt.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 5. Running Preferences & Background Options */}
+      {/* 6. Running Preferences & Background Options (Reset Cache dropped) */}
       <div className={cardClass}>
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-cyan-500" />
-          <span className={labelClass}>Running Preferences &amp; Background Options</span>
+          <span className={labelClass}>{t('settings.prefs.title')}</span>
         </div>
 
         {/* Distance & Pace Units */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <div className="text-xs font-semibold">Pace &amp; Distance Units</div>
-            <div className={subTextClass}>Used for workout cards and pace step diagrams</div>
+            <div className="text-xs font-semibold">{t('settings.prefs.units')}</div>
+            <div className={subTextClass}>{t('settings.prefs.units_sub')}</div>
           </div>
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/20 border border-slate-700/40">
             {(
@@ -403,7 +468,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateSettings({ units: u.id });
-                  flashSaved(`Units set to ${u.label}`);
+                  flashSaved(u.label);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer ${
                   settings.units === u.id
@@ -419,41 +484,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* 100% Threshold Pace Reference */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/40">
-          <div>
-            <div className="text-xs font-semibold">100% Threshold Pace Reference</div>
-            <div className={subTextClass}>
-              Converts coach % pace targets (e.g. 90-100% Pace) into min/km
-            </div>
-          </div>
-          <select
-            value={settings.thresholdPaceFormatted}
-            onChange={(e) => {
-              onUpdateSettings({ thresholdPaceFormatted: e.target.value });
-              flashSaved(`Threshold pace updated to ${e.target.value}`);
-            }}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-mono cursor-pointer ${
-              isLight
-                ? 'bg-slate-50 border-slate-300 text-slate-900'
-                : 'bg-[#10131b] border-slate-700 text-slate-100'
-            }`}
-          >
-            <option value="3:10/km">3:10/km (Elite)</option>
-            <option value="3:20/km">3:20/km (Default)</option>
-            <option value="3:35/km">3:35/km (Sub-2:35 Mara)</option>
-            <option value="3:50/km">3:50/km (Sub-2:45 Mara)</option>
-            <option value="4:15/km">4:15/km (Sub-3:00 Mara)</option>
-          </select>
-        </div>
-
         {/* Calendar Lookahead Window */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/40">
           <div className="flex items-center gap-2">
             <CalendarRange className="w-4 h-4 text-slate-400" />
             <div>
-              <div className="text-xs font-semibold">Incoming Workouts Lookahead</div>
-              <div className={subTextClass}>How many days ahead to fetch from Intervals.icu</div>
+              <div className="text-xs font-semibold">{t('settings.prefs.lookahead')}</div>
+              <div className={subTextClass}>{t('settings.prefs.lookahead_sub')}</div>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -463,7 +500,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateSettings({ lookaheadDays: days });
-                  flashSaved(`Lookahead window set to ${days} days`);
+                  flashSaved(t('settings.prefs.days', { days }));
                 }}
                 className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold cursor-pointer ${
                   settings.lookaheadDays === days
@@ -473,7 +510,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     : 'bg-[#10131b] border-slate-800 text-slate-300'
                 }`}
               >
-                {days} Days
+                {t('settings.prefs.days', { days })}
               </button>
             ))}
           </div>
@@ -497,7 +534,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <div className="flex items-center gap-2.5">
               <Wifi className="w-4 h-4 text-cyan-400 shrink-0" />
               <div>
-                <div className="text-xs font-semibold">Auto-Sync on Wi-Fi Only</div>
+                <div className="text-xs font-semibold">{t('settings.prefs.wifi_only')}</div>
                 <div className="text-[11px] text-slate-400">WorkManager UNMETERED</div>
               </div>
             </div>
@@ -528,8 +565,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <div className="flex items-center gap-2.5">
               <Bell className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
-                <div className="text-xs font-semibold">Morning Workout Digest</div>
-                <div className="text-[11px] text-slate-400">07:00 summary notification</div>
+                <div className="text-xs font-semibold">
+                  {t('settings.prefs.morning_digest')}
+                </div>
+                <div className="text-[11px] text-slate-400">07:00</div>
               </div>
             </div>
             <span
@@ -541,25 +580,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </span>
           </button>
         </div>
-
-        {/* Clear Local Cache */}
-        <div className="pt-2 border-t border-slate-800/40 flex items-center justify-between">
-          <span className={subTextClass}>
-            Reset cached workouts and restore default schedule
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              onClearCache();
-              flashSaved('Local workout cache cleared');
-            }}
-            className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Reset Cache</span>
-          </button>
-        </div>
       </div>
     </div>
   );
 };
+
+

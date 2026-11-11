@@ -21,11 +21,11 @@ val ALL_CONFIGURABLE_SPORTS = listOf("Run", "Swim", "Strength", "Mobility", "Pil
 data class UserSettingsState(
     val isLoggedIn: Boolean = true,
     val athleteName: String = "Intervals.icu Athlete",
+    val language: String = "en", // en, de, ru, fr, it, or any language from public/locales/index.json
     val autoSyncHours: Int = 12,
     val themeMode: AppThemeMode = AppThemeMode.DARK,
     val enabledSports: Set<String> = setOf("Run", "Swim", "Strength", "Mobility"),
     val useMetricUnits: Boolean = true,
-    val thresholdPace: String = "3:20/km",
     val lookaheadDays: Int = 14,
     val wifiOnlySync: Boolean = false,
     val morningReminder: Boolean = true

@@ -1004,7 +1004,6 @@ data class UserSettingsState(
     val themeMode: AppThemeMode = AppThemeMode.DARK,
     val enabledSports: Set<String> = setOf("Run", "Swim", "Strength", "Mobility"),
     val useMetricUnits: Boolean = true,
-    val thresholdPace: String = "3:20/km",
     val lookaheadDays: Int = 14,
     val wifiOnlySync: Boolean = false,
     val morningReminder: Boolean = true
