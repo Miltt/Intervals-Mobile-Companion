@@ -30,10 +30,12 @@ import {
   CONFIGURABLE_SPORT_TYPES,
   DEFAULT_APP_SETTINGS,
 } from './types/settings';
-import { INITIAL_WEEKS_DATA } from './data/mockIntervalsData';
 import {
+  buildWeekForOffset,
   formatRelativeSyncTime,
-  mergeLiveIntervalsPayload,
+  getMondayOfWeek,
+  LiveIntervalsPayload,
+  toLocalIsoDate,
 } from './utils/formatters';
 import { CompletedActivityCard, PlannedWorkoutCard } from './components/CalendarCards';
 import { PlannedWorkoutDetail } from './components/PlannedWorkoutDetail';
@@ -45,8 +47,8 @@ import { SettingsScreen, SettingsSubMenu } from './components/SettingsScreen';
 import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
 import { useLocalization } from './i18n/useTranslation';
 
-// v4 cache key stores full multi-sport dataset including Swimming (Swim)
-const CACHE_STORAGE_KEY = 'intervals_icu_companion_cache_v4';
+const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
+const OAUTH_TOKEN_STORAGE_KEY = 'intervals_icu_oauth_token_v5';
 const SETTINGS_STORAGE_KEY = 'intervals_icu_companion_settings_v4';
 const PULL_REFRESH_THRESHOLD = 62;
 
@@ -58,37 +60,83 @@ type SelectedItem =
   | { type: 'completed'; activity: CompletedActivity }
   | null;
 
-// Filter raw weeks by the activity types enabled in Settings
-function filterWeeksByEnabledSports(
-  rawWeeks: WeekSummary[],
-  enabledSports: SportType[]
-): WeekSummary[] {
-  const allowed = new Set<SportType>(enabledSports);
-  return rawWeeks.map((week) => ({
-    ...week,
-    days: week.days.map((day) => ({
-      ...day,
-      wellness: undefined,
-      weather: undefined,
-      completedActivities: day.completedActivities.filter((a) => allowed.has(a.sport)),
-      scheduledWorkouts: day.scheduledWorkouts.filter((w) => allowed.has(w.sport)),
-    })),
-  }));
+function mergePayloads(
+  prev: LiveIntervalsPayload,
+  incoming: LiveIntervalsPayload
+): LiveIntervalsPayload {
+  const eventMap = new Map<string, Record<string, unknown>>();
+  for (const ev of prev.events || []) {
+    const key = String(ev.id || `${ev.start_date_local}-${ev.name}`);
+    eventMap.set(key, ev);
+  }
+  for (const ev of incoming.events || []) {
+    const key = String(ev.id || `${ev.start_date_local}-${ev.name}`);
+    eventMap.set(key, ev);
+  }
+
+  const activityMap = new Map<string, Record<string, unknown>>();
+  for (const act of prev.activities || []) {
+    const key = String(act.id || `${act.start_date_local}-${act.name}`);
+    activityMap.set(key, act);
+  }
+  for (const act of incoming.activities || []) {
+    const key = String(act.id || `${act.start_date_local}-${act.name}`);
+    activityMap.set(key, act);
+  }
+
+  return {
+    athlete: incoming.athlete || prev.athlete || null,
+    events: Array.from(eventMap.values()),
+    activities: Array.from(activityMap.values()),
+    wellness: incoming.wellness || prev.wellness || [],
+  };
 }
 
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
+      const oauthRaw = localStorage.getItem(OAUTH_TOKEN_STORAGE_KEY);
+      const oauthData = oauthRaw ? JSON.parse(oauthRaw) : null;
+      const hasOAuth = Boolean(oauthData?.accessToken);
+
       const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const isLegacyMock =
+          parsed.athleteEmail === 'athlete@example.com' ||
+          parsed.athleteName === 'Intervals.icu Athlete';
+
         return {
           ...DEFAULT_APP_SETTINGS,
           ...parsed,
+          isLoggedIn: hasOAuth ? true : isLegacyMock ? false : Boolean(parsed.isLoggedIn),
+          athleteName: hasOAuth
+            ? oauthData.athleteName || parsed.athleteName || 'Intervals.icu Athlete'
+            : isLegacyMock
+              ? ''
+              : parsed.athleteName || '',
+          athleteEmail: hasOAuth
+            ? oauthData.athleteId
+              ? `ID: ${oauthData.athleteId} (OAuth 2.0)`
+              : parsed.athleteEmail || 'OAuth 2.0 Connected'
+            : isLegacyMock
+              ? ''
+              : parsed.athleteEmail || '',
           enabledSports:
             Array.isArray(parsed.enabledSports) && parsed.enabledSports.length > 0
               ? parsed.enabledSports
               : DEFAULT_APP_SETTINGS.enabledSports,
+        };
+      }
+
+      if (hasOAuth) {
+        return {
+          ...DEFAULT_APP_SETTINGS,
+          isLoggedIn: true,
+          athleteName: oauthData.athleteName || 'Intervals.icu Athlete',
+          athleteEmail: oauthData.athleteId
+            ? `ID: ${oauthData.athleteId} (OAuth 2.0)`
+            : 'OAuth 2.0 Connected',
         };
       }
     } catch {
@@ -124,27 +172,25 @@ export default function App() {
     return systemPrefersLight;
   }, [settings.themeMode, systemPrefersLight]);
 
-  const [rawWeeks, setRawWeeks] = useState<WeekSummary[]>(() => {
+  const [livePayload, setLivePayload] = useState<LiveIntervalsPayload>(() => {
     try {
-      const saved = localStorage.getItem(CACHE_STORAGE_KEY);
+      const saved = localStorage.getItem(LIVE_CACHE_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.weeks) && parsed.weeks.length > 0) {
-          return parsed.weeks;
+        if (parsed && parsed.payload) {
+          return parsed.payload;
         }
       }
     } catch {
-      // Fallback to initial dataset
+      // ignore
     }
-    return INITIAL_WEEKS_DATA;
+    return { athlete: null, events: [], activities: [], wellness: [] };
   });
 
-  const [activeWeekIndex, setActiveWeekIndex] = useState<number>(0);
-  // Default selection is the current day (isToday) instead of All Week
-  const [selectedDayDate, setSelectedDayDate] = useState<string | 'ALL'>(() => {
-    const todayDay = INITIAL_WEEKS_DATA[0]?.days.find((d) => d.isToday);
-    return todayDay ? todayDay.date : '2026-10-29';
-  });
+  // 0 = Current Week (always opens on the current week!), -1 = Previous Week, +1 = Next Week
+  const [weekOffset, setWeekOffset] = useState<number>(0);
+  // Default selection is 'ALL' so the user sees the full Current Week (with Today highlighted)
+  const [selectedDayDate, setSelectedDayDate] = useState<string | 'ALL'>('ALL');
   const [activeSection, setActiveSection] = useState<NavSection>('calendar');
   const [settingsSubMenu, setSettingsSubMenu] = useState<SettingsSubMenu>(null);
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
@@ -179,12 +225,6 @@ export default function App() {
     });
   }, []);
 
-  // Weeks uploaded/filtered by the activity types checked in Settings
-  const weeks = useMemo(
-    () => filterWeeksByEnabledSports(rawWeeks, settings.enabledSports),
-    [rawWeeks, settings.enabledSports]
-  );
-
   // Effective sports shown on the calendar after applying the bottom-right Filter button
   const activeSportSet = useMemo(() => {
     const valid = selectedFilterSports.filter((s) => settings.enabledSports.includes(s));
@@ -213,9 +253,9 @@ export default function App() {
   }, [settings.autoSyncHours]);
 
   const [syncState, setSyncState] = useState<SyncState>(() => {
-    let lastSyncedAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    let lastSyncedAt = '';
     try {
-      const saved = localStorage.getItem(CACHE_STORAGE_KEY);
+      const saved = localStorage.getItem(LIVE_CACHE_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.lastSyncedAt) lastSyncedAt = parsed.lastSyncedAt;
@@ -223,33 +263,79 @@ export default function App() {
     } catch {
       // ignore
     }
-    const nextAuto = new Date(
-      new Date(lastSyncedAt).getTime() + 12 * 60 * 60 * 1000
-    ).toISOString();
+    const baseTime = lastSyncedAt ? new Date(lastSyncedAt).getTime() : Date.now();
+    const nextAuto = new Date(baseTime + 12 * 60 * 60 * 1000).toISOString();
     return {
       lastSyncedAt,
       nextAutoSyncAt: nextAuto,
       isSyncing: false,
-      mode: 'demo',
-      athleteName: 'Intervals.icu Athlete',
-      athleteDevice: 'Garmin Forerunner 965',
+      mode: 'live',
+      athleteName: settings.athleteName || 'Intervals.icu Athlete',
+      athleteDevice: 'Intervals.icu',
       syncError: null,
     };
   });
 
-  const activeWeek = weeks[activeWeekIndex] || weeks[0];
+  // Build the currently viewed week (0 = Current Week, -1 = Last Week, +1 = Next Week, etc.)
+  const activeWeek: WeekSummary = useMemo(
+    () => buildWeekForOffset(weekOffset, livePayload, settings.enabledSports),
+    [weekOffset, livePayload, settings.enabledSports]
+  );
+
+  // Build multi-week range around current week for Incoming Workouts tab & activity stepping
+  const multiWeeksRange: WeekSummary[] = useMemo(() => {
+    const list: WeekSummary[] = [];
+    for (let offset = -4; offset <= 4; offset++) {
+      list.push(buildWeekForOffset(offset, livePayload, settings.enabledSports));
+    }
+    return list;
+  }, [livePayload, settings.enabledSports]);
 
   const performSync = useCallback(
-    async (isManualForceCollect: boolean) => {
+    async (isManualForceCollect: boolean, explicitToken?: string) => {
+      let storedToken = explicitToken || '';
+      if (!storedToken) {
+        try {
+          const tokenRaw = localStorage.getItem(OAUTH_TOKEN_STORAGE_KEY);
+          if (tokenRaw) {
+            const parsedToken = JSON.parse(tokenRaw);
+            if (parsedToken?.accessToken) {
+              storedToken = String(parsedToken.accessToken);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // Never sync or auto-login if the user has logged out (no OAuth token)
+      if (!storedToken) {
+        setSyncState((prev) => ({ ...prev, isSyncing: false }));
+        if (isManualForceCollect) {
+          setSyncToast('Please sign in with Intervals.icu in Settings → Account first.');
+        }
+        return;
+      }
+
       setSyncState((prev) => ({ ...prev, isSyncing: true, syncError: null }));
 
       try {
+        // Fetch a wide window around today (56 days back + lookahead days forward)
+        // so walking < and > across weeks in the calendar uses local data without network requests
+        const currentMonday = getMondayOfWeek(new Date(), 0);
+        const oldestDate = new Date(currentMonday.getTime() - 56 * 86400000);
+        const lookahead = Math.max(14, settings.lookaheadDays || 14);
+        const newestDate = new Date(currentMonday.getTime() + (lookahead + 14) * 86400000);
+
         const response = await fetch('/api/intervals/sync', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${storedToken}`,
+          },
           body: JSON.stringify({
-            oldest: '2026-10-26',
-            newest: settings.lookaheadDays === 28 ? '2026-11-22' : '2026-11-08',
+            oldest: toLocalIsoDate(oldestDate),
+            newest: toLocalIsoDate(newestDate),
             enabledSports: settings.enabledSports,
           }),
         });
@@ -260,100 +346,119 @@ export default function App() {
         const nextIso = new Date(Date.now() + intervalMs).toISOString();
 
         if (response.ok && data.mode === 'live') {
-          const updatedWeeks = mergeLiveIntervalsPayload(
-            INITIAL_WEEKS_DATA,
-            data,
-            settings.enabledSports
-          );
-          setRawWeeks(updatedWeeks);
-          localStorage.setItem(
-            CACHE_STORAGE_KEY,
-            JSON.stringify({ weeks: updatedWeeks, lastSyncedAt: nowIso })
-          );
+          setLivePayload((prev) => {
+            const merged = mergePayloads(prev, {
+              athlete: data.athlete,
+              events: data.events,
+              activities: data.activities,
+              wellness: data.wellness,
+            });
+            try {
+              localStorage.setItem(
+                LIVE_CACHE_STORAGE_KEY,
+                JSON.stringify({ payload: merged, lastSyncedAt: nowIso })
+              );
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+
           if (data.athlete?.name) {
-            handleUpdateSettings({ isLoggedIn: true, athleteName: data.athlete.name });
+            handleUpdateSettings({
+              isLoggedIn: true,
+              athleteName: String(data.athlete.name),
+              athleteEmail: data.athlete.email
+                ? String(data.athlete.email)
+                : `Athlete #${data.athlete.id || '0'}`,
+            });
           }
+
           setSyncState((prev) => ({
             ...prev,
             isSyncing: false,
             lastSyncedAt: nowIso,
             nextAutoSyncAt: nextIso,
             mode: 'live',
-            athleteName: data.athlete?.name || prev.athleteName,
+            athleteName: data.athlete?.name ? String(data.athlete.name) : prev.athleteName,
           }));
+
           if (isManualForceCollect) {
+            const evCount = Array.isArray(data.events) ? data.events.length : 0;
+            const actCount = Array.isArray(data.activities) ? data.activities.length : 0;
             setSyncToast(
-              `Force Collect complete — Uploaded ${settings.enabledSports.join(', ')} from Intervals.icu.`
+              `Synced ${evCount} planned workouts & ${actCount} activities from Intervals.icu.`
             );
           }
         } else {
-          localStorage.setItem(
-            CACHE_STORAGE_KEY,
-            JSON.stringify({ weeks: rawWeeks, lastSyncedAt: nowIso })
-          );
           setSyncState((prev) => ({
             ...prev,
             isSyncing: false,
-            lastSyncedAt: nowIso,
+            lastSyncedAt: prev.lastSyncedAt || nowIso,
             nextAutoSyncAt: nextIso,
-            mode: 'demo',
           }));
           if (isManualForceCollect) {
             setSyncToast(
-              `Force Collect complete — Uploaded ${settings.enabledSports.join(', ')} workouts.`
+              data.error
+                ? `Sync notice: ${data.error}`
+                : 'Sign in with Intervals.icu in Settings → Account to sync live workouts.'
             );
           }
         }
       } catch {
-        const nowIso = new Date().toISOString();
         const intervalMs = autoSyncIntervalMs || 12 * 60 * 60 * 1000;
         const nextIso = new Date(Date.now() + intervalMs).toISOString();
         setSyncState((prev) => ({
           ...prev,
           isSyncing: false,
-          lastSyncedAt: nowIso,
           nextAutoSyncAt: nextIso,
         }));
         if (isManualForceCollect) {
-          setSyncToast('Loaded workouts from offline cache.');
+          setSyncToast('Offline — showing locally cached calendar.');
         }
       }
     },
-    [rawWeeks, settings.lookaheadDays, settings.enabledSports, autoSyncIntervalMs, handleUpdateSettings]
+    [settings.lookaheadDays, settings.enabledSports, autoSyncIntervalMs, handleUpdateSettings]
   );
 
-  // Listen for OAuth 2.0 Web Browser Login popup completion
+  // Listen for OAuth 2.0 Web Browser Login popup completion (Trigger #1: First Login)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
-        return;
-      }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const name = event.data?.athleteName || 'Intervals.icu Athlete';
-        handleUpdateSettings({ isLoggedIn: true, athleteName: name });
+        const athleteId = event.data?.athleteId || '0';
+        const accessToken = event.data?.accessToken || '';
+        if (!accessToken) return;
+
+        try {
+          localStorage.setItem(
+            OAUTH_TOKEN_STORAGE_KEY,
+            JSON.stringify({
+              accessToken,
+              athleteName: name,
+              athleteId,
+              savedAt: new Date().toISOString(),
+            })
+          );
+        } catch {
+          // ignore
+        }
+
+        handleUpdateSettings({
+          isLoggedIn: true,
+          athleteName: name,
+          athleteEmail: `Athlete #${athleteId}`,
+        });
         setShowWebLoginSheet(false);
-        setSyncToast(`Signed in as ${name} via Intervals.icu Web Login`);
-        performSync(true);
+        setWeekOffset(0);
+        setSelectedDayDate('ALL');
+        setSyncToast(`Signed in as ${name} via Intervals.icu OAuth`);
+        performSync(true, accessToken);
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [handleUpdateSettings, performSync]);
-
-  // Configurable Automatic Sync check (6h, 12h, 24h, or disabled when 0)
-  useEffect(() => {
-    if (autoSyncIntervalMs <= 0) return;
-    const checkAutoSync = () => {
-      const lastMs = new Date(syncState.lastSyncedAt).getTime();
-      if (Date.now() - lastMs >= autoSyncIntervalMs && !syncState.isSyncing) {
-        performSync(false);
-      }
-    };
-    checkAutoSync();
-    const timer = setInterval(checkAutoSync, 60 * 1000);
-    return () => clearInterval(timer);
-  }, [syncState.lastSyncedAt, syncState.isSyncing, autoSyncIntervalMs, performSync]);
 
   useEffect(() => {
     if (!syncToast) return;
@@ -368,22 +473,26 @@ export default function App() {
 
   const allCompletedFiltered = useMemo(
     () =>
-      weeks.flatMap((w) =>
+      multiWeeksRange.flatMap((w) =>
         w.days.flatMap((d) =>
           d.completedActivities.filter((a) => activeSportSet.has(a.sport))
         )
       ),
-    [weeks, activeSportSet]
+    [multiWeeksRange, activeSportSet]
   );
+
+  const todayIso = useMemo(() => toLocalIsoDate(new Date()), []);
 
   const allIncomingFiltered = useMemo(
     () =>
-      weeks.flatMap((w) =>
-        w.days.flatMap((d) =>
-          d.scheduledWorkouts.filter((wo) => activeSportSet.has(wo.sport))
-        )
+      multiWeeksRange.flatMap((w) =>
+        w.days
+          .filter((d) => d.date >= todayIso)
+          .flatMap((d) =>
+            d.scheduledWorkouts.filter((wo) => activeSportSet.has(wo.sport))
+          )
       ),
-    [weeks, activeSportSet]
+    [multiWeeksRange, activeSportSet, todayIso]
   );
 
   const visibleDays: CalendarDay[] = useMemo(() => {
@@ -463,26 +572,6 @@ export default function App() {
   };
 
   const handleToggleWorkoutComplete = (workoutId: string) => {
-    setRawWeeks((prevWeeks) => {
-      const next = prevWeeks.map((w) => ({
-        ...w,
-        days: w.days.map((d) => ({
-          ...d,
-          scheduledWorkouts: d.scheduledWorkouts.map((wo) => {
-            if (wo.id !== workoutId) return wo;
-            const nextStatus =
-              wo.complianceStatus === 'completed' ? ('upcoming' as const) : ('completed' as const);
-            return { ...wo, complianceStatus: nextStatus };
-          }),
-        })),
-      }));
-      localStorage.setItem(
-        CACHE_STORAGE_KEY,
-        JSON.stringify({ weeks: next, lastSyncedAt: syncState.lastSyncedAt })
-      );
-      return next;
-    });
-
     if (selectedItem?.type === 'planned' && selectedItem.workout.id === workoutId) {
       setSelectedItem((prev) =>
         prev && prev.type === 'planned'
@@ -764,7 +853,24 @@ export default function App() {
                 onOpenWebLogin={() => setShowWebLoginSheet(true)}
                 onLogout={() => {
                   fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-                  handleUpdateSettings({ isLoggedIn: false });
+                  try {
+                    localStorage.removeItem(OAUTH_TOKEN_STORAGE_KEY);
+                    localStorage.removeItem(LIVE_CACHE_STORAGE_KEY);
+                  } catch {
+                    // ignore
+                  }
+                  setLivePayload({ athlete: null, events: [], activities: [], wellness: [] });
+                  setSyncState((prev) => ({
+                    ...prev,
+                    lastSyncedAt: '',
+                    isSyncing: false,
+                    athleteName: '',
+                  }));
+                  handleUpdateSettings({
+                    isLoggedIn: false,
+                    athleteName: '',
+                    athleteEmail: '',
+                  });
                 }}
               />
             ) : activeSection === 'incoming' ? (
@@ -911,12 +1017,23 @@ export default function App() {
                       </button>
                     );
                   })}
+                  {allIncomingFiltered.length === 0 && (
+                    <div
+                      className={`rounded-2xl border p-8 text-center text-xs text-slate-400 ${
+                        isLight
+                          ? 'bg-white border-slate-200 shadow-xs'
+                          : 'bg-[#161923] border-slate-800/80'
+                      }`}
+                    >
+                      {t('calendar.rest_empty')}
+                    </div>
+                  )}
                 </div>
               </section>
             ) : (
               /* Clean Calendar View */
               <section className="space-y-3.5">
-                {/* Compact Week Header (Filter Slider moved to bottom-right Filter button) */}
+                {/* Compact Week Header with Unlimited < and > Week Navigation */}
                 <div
                   className={`rounded-2xl border p-3 space-y-2.5 ${
                     isLight
@@ -928,29 +1045,37 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const nextIdx = Math.max(0, activeWeekIndex - 1);
-                        setActiveWeekIndex(nextIdx);
-                        const targetWeek = weeks[nextIdx];
-                        const todayOrFirst =
-                          targetWeek?.days.find((d) => d.isToday)?.date ||
-                          targetWeek?.days[0]?.date ||
-                          'ALL';
-                        setSelectedDayDate(todayOrFirst);
+                        setWeekOffset((prev) => prev - 1);
+                        setSelectedDayDate('ALL');
                       }}
-                      disabled={activeWeekIndex === 0}
-                      className={`min-h-[36px] min-w-[36px] rounded-xl disabled:opacity-40 flex items-center justify-center transition-colors cursor-pointer ${
+                      className={`min-h-[36px] min-w-[36px] rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
                         isLight
                           ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                           : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200'
                       }`}
                       aria-label="Previous week"
+                      title="Previous week"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
 
                     <div className="text-center">
-                      <div className="text-xs sm:text-sm font-bold">
-                        {t('calendar.week', { num: activeWeek.weekNumber })} · {activeWeek.dateRangeLabel}
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-xs sm:text-sm font-bold">
+                          {t('calendar.week', { num: activeWeek.weekNumber })} · {activeWeek.dateRangeLabel}
+                        </span>
+                        {weekOffset !== 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWeekOffset(0);
+                              setSelectedDayDate('ALL');
+                            }}
+                            className="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 text-[10px] font-mono font-bold hover:bg-sky-500/25 cursor-pointer"
+                          >
+                            {t('calendar.today')}
+                          </button>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono tabular-nums">
                         {feedFilter === 'all'
@@ -968,22 +1093,16 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const nextIdx = Math.min(weeks.length - 1, activeWeekIndex + 1);
-                        setActiveWeekIndex(nextIdx);
-                        const targetWeek = weeks[nextIdx];
-                        const todayOrFirst =
-                          targetWeek?.days.find((d) => d.isToday)?.date ||
-                          targetWeek?.days[0]?.date ||
-                          'ALL';
-                        setSelectedDayDate(todayOrFirst);
+                        setWeekOffset((prev) => prev + 1);
+                        setSelectedDayDate('ALL');
                       }}
-                      disabled={activeWeekIndex === weeks.length - 1}
-                      className={`min-h-[36px] min-w-[36px] rounded-xl disabled:opacity-40 flex items-center justify-center transition-colors cursor-pointer ${
+                      className={`min-h-[36px] min-w-[36px] rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
                         isLight
                           ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                           : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200'
                       }`}
                       aria-label="Next week"
+                      title="Next week"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -1358,15 +1477,17 @@ export default function App() {
         {showWebLoginSheet && (
           <IntervalsWebLoginSheet
             defaultEmail={settings.athleteEmail}
-            onSuccessLogin={(athleteName, email) => {
+            onSuccessLogin={(athleteName, email, accessToken) => {
               handleUpdateSettings({
                 isLoggedIn: true,
                 athleteName,
                 athleteEmail: email,
               });
               setShowWebLoginSheet(false);
-              setSyncToast(`Signed in as ${athleteName} via Intervals.icu Web Browser Login`);
-              performSync(true);
+              setWeekOffset(0);
+              setSelectedDayDate('ALL');
+              setSyncToast(`Signed in as ${athleteName} via Intervals.icu OAuth`);
+              performSync(true, accessToken);
             }}
             onClose={() => setShowWebLoginSheet(false)}
           />

@@ -215,132 +215,11 @@ data class CompletedRunActivity(
 `,
   },
   {
-    path: 'app/src/main/java/icu/intervals/companion/model/SampleRunningData.kt',
-    title: 'SampleRunningData.kt',
-    description: 'Default offline/demo running dataset including Friday 22-step Fartlek (1h5m, 15km), Saturday Easy + Strides, Sunday 25km Long Run, and completed Garmin Forerunner 965 runs.',
-    content: `package icu.intervals.companion.model
-
-object SampleRunningData {
-    val fartlekWorkout = PlannedRunWorkout(
-        id = "plan-fri-fartlek",
-        date = "2026-10-30",
-        startTime = "08:00",
-        name = "Fartlek",
-        durationSec = 3900,
-        durationLabel = "1h5m",
-        distanceKm = 15.0,
-        load = 65,
-        intensityPct = 77,
-        instructionGroups = listOf(
-            InstructionGroup(
-                repeatCount = null,
-                bullets = listOf("30m 70-75% Pace (4:46-4:27/km)")
-            ),
-            InstructionGroup(
-                repeatCount = 10,
-                bullets = listOf(
-                    "1m 90-100% Pace (3:42-3:20/km)",
-                    "1m 70-75% Pace (4:46-4:27/km)"
-                )
-            ),
-            InstructionGroup(
-                repeatCount = null,
-                bullets = listOf("15m 70-75% Pace (4:46-4:27/km)")
-            )
-        ),
-        steps = buildList {
-            add(
-                WorkoutStepBlock(
-                    id = "warmup",
-                    label = "30m @ 4:46-4:27/km (70-75%)",
-                    durationSec = 1800,
-                    startSec = 0,
-                    endSec = 1800,
-                    distanceKm = 6.5,
-                    pctPaceMin = 70,
-                    pctPaceMax = 75,
-                    paceMinFormatted = "4:46",
-                    paceMaxFormatted = "4:27",
-                    paceMidSecPerKm = 276f,
-                    zone = TrainingZone.Z1
-                )
-            )
-            var cursor = 1800
-            for (rep in 1..10) {
-                add(
-                    WorkoutStepBlock(
-                        id = "on-\$rep",
-                        label = "Rep \$rep/10 · 1m @ 3:42-3:20/km (90-100%)",
-                        durationSec = 60,
-                        startSec = cursor,
-                        endSec = cursor + 60,
-                        distanceKm = 0.29,
-                        pctPaceMin = 90,
-                        pctPaceMax = 100,
-                        paceMinFormatted = "3:42",
-                        paceMaxFormatted = "3:20",
-                        paceMidSecPerKm = 211f,
-                        zone = TrainingZone.Z4
-                    )
-                )
-                cursor += 60
-                add(
-                    WorkoutStepBlock(
-                        id = "off-\$rep",
-                        label = "Recovery \$rep/10 · 1m @ 4:46-4:27/km (70-75%)",
-                        durationSec = 60,
-                        startSec = cursor,
-                        endSec = cursor + 60,
-                        distanceKm = 0.22,
-                        pctPaceMin = 70,
-                        pctPaceMax = 75,
-                        paceMinFormatted = "4:46",
-                        paceMaxFormatted = "4:27",
-                        paceMidSecPerKm = 276f,
-                        zone = TrainingZone.Z1
-                    )
-                )
-                cursor += 60
-            }
-            add(
-                WorkoutStepBlock(
-                    id = "cooldown",
-                    label = "15m @ 4:46-4:27/km (70-75%)",
-                    durationSec = 900,
-                    startSec = 3000,
-                    endSec = 3900,
-                    distanceKm = 3.25,
-                    pctPaceMin = 70,
-                    pctPaceMax = 75,
-                    paceMinFormatted = "4:46",
-                    paceMaxFormatted = "4:27",
-                    paceMidSecPerKm = 276f,
-                    zone = TrainingZone.Z1
-                )
-            )
-        },
-        zoneDistribution = listOf(
-            ZoneAllocation(TrainingZone.Z1, "55m", 84.6f),
-            ZoneAllocation(TrainingZone.Z2, "-", 0f),
-            ZoneAllocation(TrainingZone.Z3, "-", 0f),
-            ZoneAllocation(TrainingZone.Z4, "10m", 15.4f),
-            ZoneAllocation(TrainingZone.Z5, "-", 0f)
-        ),
-        coachNotes = "Smooth turnover on the 1-minute surges, keep float recoveries relaxed."
-    )
-
-    val plannedWorkouts = listOf(fartlekWorkout)
-    val completedActivities = listOf<CompletedRunActivity>()
-}
-`,
-  },
-  {
     path: 'app/src/main/java/icu/intervals/companion/network/IntervalsApiService.kt',
     title: 'IntervalsApiService.kt',
-    description: 'Retrofit service for https://intervals.icu/api/v1 with HTTP Basic Auth (API_KEY) and running-only filtering.',
+    description: 'Retrofit service for https://intervals.icu/api/v1 with OAuth 2.0 Bearer authentication.',
     content: `package icu.intervals.companion.network
 
-import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -390,7 +269,6 @@ data class IntervalsActivityDto(
 
 interface IntervalsApiService {
 
-    // Fetch scheduled workouts with resolve=true so workout_doc steps are resolved to pace/time
     @GET("api/v1/athlete/{id}/events")
     suspend fun getEvents(
         @Path("id") athleteId: String = "0",
@@ -399,7 +277,6 @@ interface IntervalsApiService {
         @Query("resolve") resolve: Boolean = true
     ): List<IntervalsEventDto>
 
-    // Fetch completed activities; we filter strictly to type == "Run" in repository
     @GET("api/v1/athlete/{id}/activities")
     suspend fun getActivities(
         @Path("id") athleteId: String = "0",
@@ -408,12 +285,11 @@ interface IntervalsApiService {
     ): List<IntervalsActivityDto>
 
     companion object {
-        fun create(apiKey: String): IntervalsApiService {
+        fun create(accessToken: String): IntervalsApiService {
             val client = OkHttpClient.Builder()
                 .addInterceptor { chain ->
-                    val credential = Credentials.basic("API_KEY", apiKey)
                     val request = chain.request().newBuilder()
-                        .header("Authorization", credential)
+                        .header("Authorization", "Bearer \$accessToken")
                         .header("Accept", "application/json")
                         .build()
                     chain.proceed(request)
@@ -434,7 +310,7 @@ interface IntervalsApiService {
   {
     path: 'app/src/main/java/icu/intervals/companion/data/IntervalsRepository.kt',
     title: 'IntervalsRepository.kt',
-    description: 'Repository that fetches scheduled workouts (?resolve=true) & completed activities, strictly filtering to Running only (ignoring steps, strength, mobility, Pilates, Yoga).',
+    description: 'Repository that fetches scheduled workouts (?resolve=true) & completed activities from Intervals.icu.',
     content: `package icu.intervals.companion.data
 
 import icu.intervals.companion.model.*
@@ -446,10 +322,6 @@ import kotlin.math.roundToInt
 class IntervalsRepository(
     private val apiService: IntervalsApiService
 ) {
-    /**
-     * Fetches scheduled running workouts (?resolve=true) and completed running activities.
-     * Strictly ignores non-running sports (Pilates, Yoga, Strength, Mobility, Steps).
-     */
     suspend fun syncRunningCalendar(
         athleteId: String = "0",
         oldestDate: String,
@@ -470,19 +342,19 @@ class IntervalsRepository(
         val plannedRuns = rawEvents
             .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
-                val durationSec = dto.moving_time ?: dto.workout_doc?.duration ?: 3600
-                val distKm = ((dto.distance ?: dto.workout_doc?.distance ?: 10000.0) / 1000.0)
+                val durationSec = dto.moving_time ?: dto.workout_doc?.duration ?: 0
+                val distKm = ((dto.distance ?: dto.workout_doc?.distance ?: 0.0) / 1000.0)
 
                 PlannedRunWorkout(
                     id = dto.id.toString(),
                     date = dto.start_date_local.take(10),
-                    startTime = dto.start_date_local.drop(11).take(5).ifEmpty { "08:00" },
+                    startTime = dto.start_date_local.drop(11).take(5),
                     name = dto.name ?: "Scheduled Run",
                     durationSec = durationSec,
                     durationLabel = "\${durationSec / 60}m",
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
-                    load = dto.icu_training_load ?: 50,
-                    intensityPct = dto.icu_intensity?.roundToInt() ?: 75,
+                    load = dto.icu_training_load ?: 0,
+                    intensityPct = dto.icu_intensity?.roundToInt() ?: 0,
                     instructionGroups = emptyList(),
                     steps = emptyList(),
                     zoneDistribution = emptyList(),
@@ -493,8 +365,8 @@ class IntervalsRepository(
         val completedRuns = rawActivities
             .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
-                val durationSec = dto.moving_time ?: 3600
-                val distKm = ((dto.distance ?: 10000.0) / 1000.0)
+                val durationSec = dto.moving_time ?: 0
+                val distKm = ((dto.distance ?: 0.0) / 1000.0)
                 CompletedRunActivity(
                     id = dto.id,
                     date = dto.start_date_local.take(10),
@@ -502,12 +374,12 @@ class IntervalsRepository(
                     name = dto.name ?: "Completed Run",
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
                     movingTimeLabel = "\${durationSec / 60}m",
-                    paceFormatted = "5:15/km",
-                    gapFormatted = "5:12/km",
-                    avgHr = dto.average_heartrate ?: 135,
-                    maxHr = dto.max_heartrate ?: 155,
+                    paceFormatted = "—",
+                    gapFormatted = "—",
+                    avgHr = dto.average_heartrate ?: 0,
+                    maxHr = dto.max_heartrate ?: 0,
                     normPowerWatts = dto.icu_weighted_avg_watts,
-                    load = dto.icu_training_load ?: 45,
+                    load = dto.icu_training_load ?: 0,
                     compliancePct = dto.icu_workout_compliance,
                     paceStreamSec = emptyList(),
                     hrStreamBpm = emptyList(),
@@ -523,7 +395,7 @@ class IntervalsRepository(
   {
     path: 'app/src/main/java/icu/intervals/companion/sync/IntervalsSyncWorker.kt',
     title: 'IntervalsSyncWorker.kt',
-    description: 'WorkManager CoroutineWorker that syncs running workouts twice per day (every 12 hours) and supports immediate Force Collect.',
+    description: 'WorkManager CoroutineWorker that syncs workouts in the background and supports immediate Force Collect.',
     content: `package icu.intervals.companion.sync
 
 import android.content.Context
@@ -537,8 +409,6 @@ class IntervalsSyncWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            // Pulls running events (?resolve=true) & running activities from IntervalsApiService
-            // and updates local Room database / DataStore cache.
             Result.success()
         } catch (e: Exception) {
             Result.retry()
@@ -549,9 +419,6 @@ class IntervalsSyncWorker(
         private const val UNIQUE_PERIODIC_WORK = "intervals_12h_periodic_sync"
         private const val UNIQUE_FORCE_COLLECT_WORK = "intervals_force_collect_now"
 
-        /**
-         * Schedules automatic background sync twice per day (every 12 hours).
-         */
         fun scheduleTwiceDailySync(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -568,9 +435,6 @@ class IntervalsSyncWorker(
             )
         }
 
-        /**
-         * Triggered when the athlete taps the "Force Collect" button in the top bar.
-         */
         fun triggerForceCollectNow(context: Context) {
             val immediateRequest = OneTimeWorkRequestBuilder<IntervalsSyncWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
@@ -589,7 +453,7 @@ class IntervalsSyncWorker(
   {
     path: 'app/src/main/java/icu/intervals/companion/viewmodel/IntervalsViewModel.kt',
     title: 'IntervalsViewModel.kt',
-    description: 'Jetpack Compose StateFlow ViewModel coordinating the Running Calendar, Incoming Workouts, and Force Collect sync.',
+    description: 'Jetpack Compose StateFlow ViewModel coordinating the Calendar, Incoming Workouts, and Force Collect sync.',
     content: `package icu.intervals.companion.viewmodel
 
 import androidx.lifecycle.ViewModel
@@ -600,12 +464,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 data class RunnerUiState(
     val isSyncing: Boolean = false,
-    val lastSyncedLabel: String = "Synced 2h ago · Auto 2x/day (12h)",
-    val plannedWorkouts: List<PlannedRunWorkout> = SampleRunningData.plannedWorkouts,
-    val completedRuns: List<CompletedRunActivity> = SampleRunningData.completedActivities,
+    val lastSyncedLabel: String = "Pull down to sync",
+    val plannedWorkouts: List<PlannedRunWorkout> = emptyList(),
+    val completedRuns: List<CompletedRunActivity> = emptyList(),
     val selectedPlannedWorkout: PlannedRunWorkout? = null,
     val selectedCompletedRun: CompletedRunActivity? = null
 )
@@ -617,31 +484,33 @@ class IntervalsViewModel(
     private val _uiState = MutableStateFlow(RunnerUiState())
     val uiState: StateFlow<RunnerUiState> = _uiState.asStateFlow()
 
-    fun forceCollectNow(oldestDate: String = "2026-10-26", newestDate: String = "2026-11-08") {
+    fun forceCollectNow() {
+        val monday = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val sunday = monday.plusDays(6)
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSyncing = true)
             try {
                 if (repository != null) {
                     val (planned, completed) = repository.syncRunningCalendar(
-                        oldestDate = oldestDate,
-                        newestDate = newestDate
+                        oldestDate = monday.toString(),
+                        newestDate = sunday.toString()
                     )
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        lastSyncedLabel = "Just now · Force Collect complete",
-                        plannedWorkouts = planned.ifEmpty { SampleRunningData.plannedWorkouts },
-                        completedRuns = completed.ifEmpty { SampleRunningData.completedActivities }
+                        lastSyncedLabel = "Just now",
+                        plannedWorkouts = planned,
+                        completedRuns = completed
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        lastSyncedLabel = "Just now · Force Collect complete"
+                        lastSyncedLabel = "Not signed in"
                     )
                 }
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSyncing = false,
-                    lastSyncedLabel = "Offline cache · Auto 12h WorkManager active"
+                    lastSyncedLabel = "Offline cache"
                 )
             }
         }

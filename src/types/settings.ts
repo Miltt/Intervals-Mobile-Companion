@@ -72,9 +72,9 @@ export interface AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  isLoggedIn: true,
-  athleteName: 'Intervals.icu Athlete',
-  athleteEmail: 'athlete@example.com',
+  isLoggedIn: false,
+  athleteName: '',
+  athleteEmail: '',
   language:
     typeof navigator !== 'undefined' &&
     ['en', 'de', 'ru', 'fr', 'it'].includes(navigator.language.slice(0, 2).toLowerCase())

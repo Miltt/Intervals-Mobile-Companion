@@ -12,7 +12,7 @@
   "calendar.week": "Неделя {num}",
   "calendar.all_week": "Вся неделя",
   "calendar.today": "Сегодня",
-  "calendar.rest_empty": "Отдых / Нет тренировок",
+  "calendar.rest_empty": "Нет данных",
   "calendar.status.all": "Все статусы",
   "calendar.status.incoming": "Только запланированные",
   "calendar.status.done": "Только выполненные",

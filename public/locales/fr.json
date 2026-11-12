@@ -12,7 +12,7 @@
   "calendar.week": "Semaine {num}",
   "calendar.all_week": "Toute la sem.",
   "calendar.today": "Aujourd'hui",
-  "calendar.rest_empty": "Repos / Aucune séance correspondante",
+  "calendar.rest_empty": "Aucune donnée",
   "calendar.status.all": "Tous les statuts",
   "calendar.status.incoming": "Prévues uniquement",
   "calendar.status.done": "Terminées uniquement",

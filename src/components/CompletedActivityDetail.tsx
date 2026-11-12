@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -10,7 +10,7 @@ import {
   Waves,
   X,
 } from 'lucide-react';
-import { CompletedActivity, SportType } from '../types/intervals';
+import { ActivityStreamPoint, CompletedActivity, SportType, TrainingZone } from '../types/intervals';
 import { formatPaceShort, formatSecondsToClock } from '../utils/formatters';
 
 interface CompletedActivityDetailProps {
@@ -53,9 +53,110 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
   const [activeTab, setActiveTab] = useState<DetailTab>('TIMELINE');
   const [intervalFilter, setIntervalFilter] = useState<IntervalFilter>('ALL');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [liveStreams, setLiveStreams] = useState<ActivityStreamPoint[]>(activity.streams || []);
+
+  useEffect(() => {
+    setLiveStreams(activity.streams || []);
+    if (!activity.id) return;
+
+    let cancelled = false;
+    const fetchStreams = async () => {
+      try {
+        let accessToken = '';
+        try {
+          const saved = localStorage.getItem('intervals_icu_oauth_token_v5');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            accessToken = parsed?.accessToken || '';
+          }
+        } catch {
+          // ignore
+        }
+
+        const headers: Record<string, string> = {};
+        if (accessToken) {
+          headers.Authorization = `Bearer ${accessToken}`;
+        }
+
+        const res = await fetch(`/api/intervals/activity/${encodeURIComponent(activity.id)}/streams`, {
+          headers,
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const rawStreams = Array.isArray(data?.streams) ? data.streams : [];
+        if (rawStreams.length === 0 || cancelled) return;
+
+        const byType: Record<string, number[]> = {};
+        for (const s of rawStreams) {
+          if (s && typeof s.type === 'string' && Array.isArray(s.data)) {
+            byType[s.type] = s.data.map((v: unknown) => Number(v || 0));
+          }
+        }
+
+        const timeArr = byType.time || [];
+        const distArr = byType.distance || [];
+        const velArr = byType.velocity_smooth || [];
+        const wattsArr = byType.watts || [];
+        const hrArr = byType.heartrate || [];
+        const cadArr = byType.cadence || [];
+        const altArr = byType.altitude || [];
+
+        const totalPoints = Math.max(
+          timeArr.length,
+          velArr.length,
+          hrArr.length,
+          wattsArr.length
+        );
+        if (totalPoints < 2) return;
+
+        // Downsample to at most 120 points for smooth SVG rendering
+        const step = Math.max(1, Math.floor(totalPoints / 120));
+        const parsed: ActivityStreamPoint[] = [];
+        for (let i = 0; i < totalPoints; i += step) {
+          const vMs = velArr[i] || 0;
+          const paceSec = vMs > 0.4 ? Math.round(1000 / vMs) : 0;
+          const hr = Math.round(hrArr[i] || 0);
+          const maxHrRef = activity.maxHr || 185;
+          const hrRatio = maxHrRef > 0 ? hr / maxHrRef : 0;
+          const zone: TrainingZone =
+            hrRatio >= 0.92
+              ? 'Z5'
+              : hrRatio >= 0.85
+              ? 'Z4'
+              : hrRatio >= 0.78
+              ? 'Z3'
+              : hrRatio >= 0.68
+              ? 'Z2'
+              : 'Z1';
+
+          parsed.push({
+            timeSec: Math.round(timeArr[i] || 0),
+            distanceKm: distArr[i] ? Number((distArr[i] / 1000).toFixed(2)) : 0,
+            paceSecPerKm: paceSec,
+            powerWatts: Math.round(wattsArr[i] || 0),
+            heartRateBpm: hr,
+            cadenceSpm: Math.round(cadArr[i] || 0),
+            altitudeMeters: Math.round(altArr[i] || 0),
+            zone,
+          });
+        }
+
+        if (!cancelled && parsed.length >= 2) {
+          setLiveStreams(parsed);
+        }
+      } catch {
+        // ignore network errors
+      }
+    };
+
+    fetchStreams();
+    return () => {
+      cancelled = true;
+    };
+  }, [activity.id, activity.maxHr, activity.streams]);
 
   const isRun = activity.sport === 'Run';
-  const streams = activity.streams || [];
+  const streams = liveStreams;
   const hasPaceStream = isRun && streams.some((p) => p.paceSecPerKm > 0);
   const hasPowerStream = streams.some((p) => p.powerWatts > 0);
   const hasCadenceStream = streams.some((p) => p.cadenceSpm > 0);
@@ -85,7 +186,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
     });
 
     // 2. Power track
-    const maxWatts = Math.max(450, ...streams.map((s) => s.powerWatts));
+    const maxWatts = Math.max(100, ...streams.map((s) => s.powerWatts));
     const powerPoints = streams.map((s, i) => {
       const x = (i / n) * width;
       const y = height - 4 - (s.powerWatts / maxWatts) * (height - 10);
@@ -93,11 +194,12 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
     });
 
     // 3. Heart rate track
-    const minHr = Math.max(50, Math.min(...streams.map((s) => s.heartRateBpm)) - 8);
-    const maxHr = Math.max(minHr + 20, ...streams.map((s) => s.heartRateBpm)) + 5;
+    const validHr = streams.map((s) => s.heartRateBpm).filter((v) => v > 0);
+    const minHr = validHr.length ? Math.max(40, Math.min(...validHr) - 8) : 60;
+    const maxHr = validHr.length ? Math.max(minHr + 20, Math.max(...validHr) + 5) : 180;
     const hrPoints = streams.map((s, i) => {
       const x = (i / n) * width;
-      const ratio = (s.heartRateBpm - minHr) / Math.max(1, maxHr - minHr);
+      const ratio = ((s.heartRateBpm || minHr) - minHr) / Math.max(1, maxHr - minHr);
       const y = height - 4 - ratio * (height - 10);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
@@ -146,6 +248,27 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
       minAlt: Math.round(minAlt),
       maxAlt: Math.round(maxAlt),
     };
+  }, [streams]);
+
+  const hrZoneRows = useMemo(() => {
+    const counts: Record<TrainingZone, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
+    for (const pt of streams) {
+      if (pt.heartRateBpm > 0) {
+        counts[pt.zone] = (counts[pt.zone] || 0) + 1;
+      }
+    }
+    const total = Math.max(
+      1,
+      Object.values(counts).reduce((acc, v) => acc + v, 0)
+    );
+    const hasAnyHr = streams.some((pt) => pt.heartRateBpm > 0);
+    return [
+      { zone: 'Z1 · Recovery / Easy Aerobic', pct: hasAnyHr ? Math.round((counts.Z1 / total) * 100) : 0, color: '#0d9488' },
+      { zone: 'Z2 · Endurance Base', pct: hasAnyHr ? Math.round((counts.Z2 / total) * 100) : 0, color: '#16a34a' },
+      { zone: 'Z3 · Tempo', pct: hasAnyHr ? Math.round((counts.Z3 / total) * 100) : 0, color: '#eab308' },
+      { zone: 'Z4 · Sub-Threshold', pct: hasAnyHr ? Math.round((counts.Z4 / total) * 100) : 0, color: '#ea580c' },
+      { zone: 'Z5 · VO2 Max', pct: hasAnyHr ? Math.round((counts.Z5 / total) * 100) : 0, color: '#ef4444' },
+    ];
   }, [streams]);
 
   const filteredIntervals = useMemo(() => {
@@ -282,7 +405,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.threshold', 'Threshold')}</span>
-              <span className="text-slate-200">{activity.thresholdPaceFormatted || '3:20/km'}</span>
+              <span className="text-slate-200">{activity.thresholdPaceFormatted || '—'}</span>
             </div>
             {activity.compliancePct !== undefined && (
               <div className="flex justify-between gap-2">
@@ -307,12 +430,14 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.rpe_feel', 'RPE / Feel')}</span>
               <span className="text-emerald-400 font-semibold">
-                {activity.rpe ?? 2} · {activity.feel || 'Good'}
+                {activity.rpe || activity.feel
+                  ? `${activity.rpe ?? '—'}${activity.feel ? ` · ${activity.feel}` : ''}`
+                  : '—'}
               </span>
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.class', 'Class')}</span>
-              <span className="text-slate-200">{activity.trainingClass || 'Base'}</span>
+              <span className="text-slate-200">{activity.trainingClass || '—'}</span>
             </div>
           </div>
 
@@ -321,18 +446,20 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.avg_hr', 'Avg HR')}</span>
               <span className="font-bold text-rose-400">
-                {activity.avgHr} bpm {activity.avgHrPct ? `(${activity.avgHrPct}%)` : ''}
+                {activity.avgHr > 0 ? `${activity.avgHr} bpm` : '—'}{' '}
+                {activity.avgHrPct ? `(${activity.avgHrPct}%)` : ''}
               </span>
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.max_hr', 'Max HR')}</span>
               <span className="text-slate-200">
-                {activity.maxHr ?? '—'} bpm {activity.maxHrPct ? `(${activity.maxHrPct}%)` : ''}
+                {activity.maxHr ? `${activity.maxHr} bpm` : '—'}{' '}
+                {activity.maxHrPct ? `(${activity.maxHrPct}%)` : ''}
               </span>
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">TRIMP</span>
-              <span className="text-slate-200">{activity.trimp ?? 89}</span>
+              <span className="text-slate-200">{activity.trimp ?? '—'}</span>
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.cadence', 'Cadence')}</span>
@@ -358,11 +485,11 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.variability', 'Variability')}</span>
-              <span className="text-slate-200">{activity.variabilityIndex ?? '0.99'}</span>
+              <span className="text-slate-200">{activity.variabilityIndex ?? '—'}</span>
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-slate-400 font-sans">{tr('activity.efficiency', 'Efficiency')}</span>
-              <span className="text-slate-200">{activity.efficiencyFactor ?? '2.20'}</span>
+              <span className="text-slate-200">{activity.efficiencyFactor ?? '—'}</span>
             </div>
           </div>
 
@@ -430,6 +557,12 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
       </div>
 
       {/* Main Content Area by Active Tab */}
+      {activeTab === 'TIMELINE' && !chartData && (
+        <div className="p-6 text-center text-xs text-slate-400 font-mono">
+          {tr('calendar.rest_empty', 'No Data')}
+        </div>
+      )}
+
       {activeTab === 'TIMELINE' && chartData && (
         <div className="p-4 sm:p-6 space-y-5">
           {/* Interactive Crosshair Summary Bar */}
@@ -482,7 +615,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             </div>
           )}
 
-          {/* 5-Track Synchronized Telemetry Stack — Matches Screenshot 2 */}
+          {/* 5-Track Synchronized Telemetry Stack */}
           <div
             className="relative select-none touch-pan-y cursor-crosshair"
             onMouseMove={handlePointerMove}
@@ -496,12 +629,11 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
                     Pace/km
                   </span>
                   <div className="flex-1 h-16 flex flex-col justify-between text-right font-mono tabular-nums text-[10px] leading-none">
-                    <span className="text-slate-300">4:17</span>
+                    <span className="text-slate-300">{formatPaceShort(chartData.minPace)}</span>
                     <span className="text-cyan-400 font-semibold">
-                      {activity.paceFormatted?.replace('/km', '') || '5:22'}
+                      {activity.paceFormatted?.replace('/km', '') || '—'}
                     </span>
-                    <span className="text-teal-400">5:01</span>
-                    <span className="text-slate-400">9:23</span>
+                    <span className="text-slate-400">{formatPaceShort(chartData.maxPace)}</span>
                   </div>
                 </div>
                 <div className="relative flex-1 h-16 bg-[#10131b] overflow-hidden">
@@ -536,7 +668,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
                   <div className="flex-1 h-16 flex flex-col justify-between text-right font-mono tabular-nums text-[10px] leading-none">
                     <span className="text-slate-300">{chartData.maxWatts}</span>
                     <span className="text-purple-400 font-semibold">
-                      {activity.avgPower || 273}
+                      {activity.avgPower || '—'}
                     </span>
                     <span className="text-slate-400">0</span>
                   </div>
@@ -570,8 +702,8 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
                   Heartrate
                 </span>
                 <div className="flex-1 h-16 flex flex-col justify-between text-right font-mono tabular-nums text-[10px] leading-none">
-                  <span className="text-slate-300">{activity.maxHr || 141}</span>
-                  <span className="text-rose-400 font-semibold">{activity.avgHr}</span>
+                  <span className="text-slate-300">{activity.maxHr || chartData.maxHr}</span>
+                  <span className="text-rose-400 font-semibold">{activity.avgHr || '—'}</span>
                   <span className="text-slate-400">{chartData.minHr}</span>
                 </div>
               </div>
@@ -599,9 +731,9 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
                     Cadence
                   </span>
                   <div className="flex-1 h-14 flex flex-col justify-between text-right font-mono tabular-nums text-[10px] leading-none">
-                    <span className="text-slate-300">81</span>
+                    <span className="text-slate-300">{chartData.maxCad}</span>
                     <span className="text-fuchsia-400 font-semibold">
-                      {activity.cadence || 76}
+                      {activity.cadence || '—'}
                     </span>
                     <span className="text-slate-400">0</span>
                   </div>
@@ -764,10 +896,10 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             <div className="p-3.5 rounded-xl bg-[#181c27] border border-slate-800/80">
               <div className="text-xs text-slate-400 font-sans">Power / HR Ratio</div>
               <div className="text-lg font-bold text-emerald-300 mt-1">
-                {activity.powerHrRatio ?? '2.20'}
+                {activity.powerHrRatio ?? '—'}
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                EF: {activity.efficiencyFactor ?? '2.20'}
+                EF: {activity.efficiencyFactor ?? '—'}
               </div>
             </div>
           </div>
@@ -781,13 +913,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
             Heart Rate & Intensity Zone Distribution
           </h3>
           <div className="space-y-2.5 font-mono tabular-nums text-xs">
-            {[
-              { zone: 'Z1 · Recovery / Easy Aerobic (< 134 bpm)', pct: 86, color: '#0d9488' },
-              { zone: 'Z2 · Endurance Base (135 – 148 bpm)', pct: 11, color: '#16a34a' },
-              { zone: 'Z3 · Tempo (149 – 160 bpm)', pct: 3, color: '#eab308' },
-              { zone: 'Z4 · Sub-Threshold (161 – 171 bpm)', pct: 0, color: '#ea580c' },
-              { zone: 'Z5 · VO2 Max (> 172 bpm)', pct: 0, color: '#ef4444' },
-            ].map((row) => (
+            {hrZoneRows.map((row) => (
               <div key={row.zone} className="space-y-1">
                 <div className="flex justify-between text-slate-300">
                   <span className="font-sans">{row.zone}</span>

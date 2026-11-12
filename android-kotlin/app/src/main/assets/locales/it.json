@@ -12,7 +12,7 @@
   "calendar.week": "Settimana {num}",
   "calendar.all_week": "Tutta la sett.",
   "calendar.today": "Oggi",
-  "calendar.rest_empty": "Riposo / Nessun allenamento",
+  "calendar.rest_empty": "Nessun dato",
   "calendar.status.all": "Tutti gli stati",
   "calendar.status.incoming": "Solo in programma",
   "calendar.status.done": "Solo completati",

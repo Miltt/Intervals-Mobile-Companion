@@ -12,7 +12,7 @@
   "calendar.week": "Week {num}",
   "calendar.all_week": "All Week",
   "calendar.today": "Today",
-  "calendar.rest_empty": "Rest / No matching workout",
+  "calendar.rest_empty": "No Data",
   "calendar.status.all": "All Statuses",
   "calendar.status.incoming": "Incoming Only",
   "calendar.status.done": "Done Only",

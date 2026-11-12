@@ -1,5 +1,6 @@
 import express from 'express';
 import { createServer as createHttpServer } from 'http';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -14,6 +15,9 @@ const INTERVALS_BASE_URL = 'https://intervals.icu/api/v1';
 const INTERVALS_OAUTH_AUTHORIZE_URL = 'https://intervals.icu/oauth/authorize';
 const INTERVALS_OAUTH_TOKEN_URL = 'https://intervals.icu/api/oauth/token';
 
+// Approved Public OAuth Client ID for Intervals Mobile Companion (PKCE S256)
+const DEFAULT_OAUTH_CLIENT_ID = '1781';
+
 // In-memory OAuth session store for the authenticated athlete via Web Browser Login
 let oauthSession: {
   accessToken: string;
@@ -21,22 +25,36 @@ let oauthSession: {
   athleteName: string;
 } | null = null;
 
+// In-memory PKCE verifier store keyed by OAuth state parameter
+const pkceStore = new Map<string, { codeVerifier: string; redirectUri: string }>();
+
+function generateCodeVerifier(): string {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function computeCodeChallengeS256(verifier: string): string {
+  return crypto.createHash('sha256').update(verifier, 'ascii').digest('base64url');
+}
+
 function buildAuthHeader(bearerToken?: string): string | null {
   if (bearerToken && bearerToken.trim()) {
     return `Bearer ${bearerToken.trim()}`;
   }
-  if (oauthSession?.accessToken) {
-    return `Bearer ${oauthSession.accessToken}`;
-  }
-  const key = (process.env.INTERVALS_API_KEY || '').trim();
-  if (!key) return null;
-  const encoded = Buffer.from(`API_KEY:${key}`).toString('base64');
-  return `Basic ${encoded}`;
+  return null;
 }
 
+const REGISTERED_WEB_REDIRECT_URI =
+  'https://ais-pre-5wnbvdgheoghwxovarqosc-930214768256.europe-west2.run.app/auth/callback';
+
 function getRedirectUri(): string {
-  const baseUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return `${baseUrl}/auth/callback`;
+  const envUrl = (process.env.OAUTH_REDIRECT_URI || '').trim();
+  if (envUrl) return envUrl;
+  const appUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (appUrl) {
+    // Normalize ais-dev- preview URL to ais-pre- so it matches the registered Intervals.icu Redirect URL
+    return `${appUrl.replace('://ais-dev-', '://ais-pre-')}/auth/callback`;
+  }
+  return REGISTERED_WEB_REDIRECT_URI;
 }
 
 async function startServer() {
@@ -46,54 +64,83 @@ async function startServer() {
 
   // Check server OAuth / connection status
   app.get('/api/intervals/status', (_req, res) => {
-    const hasOAuthClient = Boolean(process.env.CLIENT_ID && process.env.CLIENT_ID.trim());
-    const hasEnvKey = Boolean(process.env.INTERVALS_API_KEY && process.env.INTERVALS_API_KEY.trim());
+    const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
     res.json({
-      configuredOnServer: Boolean(oauthSession?.accessToken) || hasEnvKey,
-      oauthClientConfigured: hasOAuthClient,
+      configuredOnServer: Boolean(oauthSession?.accessToken),
+      oauthClientConfigured: Boolean(clientId),
+      oauthClientId: clientId,
+      accessToken: oauthSession?.accessToken || null,
       athleteName: oauthSession?.athleteName || null,
       athleteId: oauthSession?.athleteId || '0',
       syncPolicyHours: 12,
     });
   });
 
-  // 1. Construct Intervals.icu OAuth 2.0 Web Browser Login URL
-  app.get('/api/auth/url', (req, res) => {
-    const clientId = (process.env.CLIENT_ID || '').trim();
-    const originParam = typeof req.query.origin === 'string' ? req.query.origin.replace(/\/+$/, '') : '';
-    const redirectUri = originParam ? `${originParam}/auth/callback` : getRedirectUri();
+  // 1. Construct Intervals.icu OAuth 2.0 + PKCE (S256) Web Browser Login URL
+  app.get('/api/auth/url', (_req, res) => {
+    const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
+    const redirectUri = getRedirectUri();
+
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = computeCodeChallengeS256(codeVerifier);
+    const state = `ic_${crypto.randomBytes(12).toString('hex')}`;
+
+    pkceStore.set(state, { codeVerifier, redirectUri });
 
     const params = new URLSearchParams({
-      client_id: clientId || 'intervals_android_companion',
+      client_id: clientId,
       redirect_uri: redirectUri,
       scope: 'CALENDAR:READ,ACTIVITY:READ',
-      state: 'intervals_companion_oauth',
+      response_type: 'code',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      state,
     });
 
     const authUrl = `${INTERVALS_OAUTH_AUTHORIZE_URL}?${params.toString()}`;
     res.json({
       url: authUrl,
       oauthClientConfigured: Boolean(clientId),
+      clientId,
       redirectUri,
     });
   });
 
-  // 2. OAuth 2.0 Callback Handler (Exchanges authorization code for Bearer token + athlete profile)
+  // 2. OAuth 2.0 + PKCE Callback Handler (Exchanges authorization code + code_verifier for Bearer token)
   const callbackHandler: express.RequestHandler = async (req, res) => {
     const code = typeof req.query.code === 'string' ? req.query.code : '';
-    const clientId = (process.env.CLIENT_ID || '').trim();
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
     const clientSecret = (process.env.CLIENT_SECRET || '').trim();
 
-    if (code && clientId && clientSecret) {
+    const pkceEntry = state ? pkceStore.get(state) : undefined;
+    if (state) {
+      pkceStore.delete(state);
+    }
+
+    let authError = '';
+
+    if (code && clientId) {
       try {
+        const tokenParams: Record<string, string> = {
+          client_id: clientId,
+          code,
+          grant_type: 'authorization_code',
+        };
+        if (pkceEntry?.codeVerifier) {
+          tokenParams.code_verifier = pkceEntry.codeVerifier;
+        }
+        if (pkceEntry?.redirectUri) {
+          tokenParams.redirect_uri = pkceEntry.redirectUri;
+        }
+        if (clientSecret) {
+          tokenParams.client_secret = clientSecret;
+        }
+
         const tokenRes = await fetch(INTERVALS_OAUTH_TOKEN_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            client_id: clientId,
-            client_secret: clientSecret,
-            code,
-          }).toString(),
+          body: new URLSearchParams(tokenParams).toString(),
         });
 
         if (tokenRes.ok) {
@@ -103,27 +150,57 @@ async function startServer() {
             athleteId: String(tokenData.athlete?.id || '0'),
             athleteName: String(tokenData.athlete?.name || 'Intervals.icu Athlete'),
           };
+        } else {
+          authError = await tokenRes.text().catch(() => `HTTP ${tokenRes.status}`);
+          console.error('Intervals OAuth token error:', authError);
         }
       } catch (err) {
+        authError = err instanceof Error ? err.message : 'Token exchange failed';
         console.error('OAuth token exchange error:', err);
       }
     }
 
     res.send(`
       <html>
-        <body style="background:#0f1117;color:#f1f5f9;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+        <body style="background:#0f1117;color:#f1f5f9;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px;">
           <script>
+            try {
+              const token = ${JSON.stringify(oauthSession?.accessToken || '')};
+              const athleteName = ${JSON.stringify(oauthSession?.athleteName || 'Intervals.icu Athlete')};
+              const athleteId = ${JSON.stringify(oauthSession?.athleteId || '0')};
+              if (token) {
+                localStorage.setItem('intervals_icu_oauth_token_v5', JSON.stringify({
+                  accessToken: token,
+                  athleteName: athleteName,
+                  athleteId: athleteId,
+                  savedAt: new Date().toISOString()
+                }));
+              }
+            } catch (e) {}
+
             if (window.opener) {
               window.opener.postMessage({
-                type: 'OAUTH_AUTH_SUCCESS',
-                athleteName: ${JSON.stringify(oauthSession?.athleteName || 'Intervals.icu Athlete')}
+                type: ${JSON.stringify(oauthSession?.accessToken ? 'OAUTH_AUTH_SUCCESS' : 'OAUTH_AUTH_ERROR')},
+                accessToken: ${JSON.stringify(oauthSession?.accessToken || '')},
+                athleteName: ${JSON.stringify(oauthSession?.athleteName || 'Intervals.icu Athlete')},
+                athleteId: ${JSON.stringify(oauthSession?.athleteId || '0')},
+                error: ${JSON.stringify(authError)}
               }, '*');
               window.close();
             } else {
               window.location.href = '/';
             }
           </script>
-          <p>Signed in to Intervals.icu. Returning to app...</p>
+          <div>
+            <h3 style="color:#38bdf8;margin-bottom:8px;">${
+              oauthSession?.accessToken
+                ? 'Signed in to Intervals.icu!'
+                : 'Completing Intervals.icu Sign-In...'
+            }</h3>
+            <p style="font-size:13px;color:#94a3b8;">${
+              authError ? `Note: ${authError}` : 'Returning to Intervals Companion...'
+            }</p>
+          </div>
         </body>
       </html>
     `);
@@ -131,9 +208,10 @@ async function startServer() {
 
   app.get(['/auth/callback', '/auth/callback/'], callbackHandler);
 
-  // 3. Logout endpoint
+  // 3. Logout endpoint — kills active server OAuth session and PKCE state
   app.post('/api/auth/logout', (_req, res) => {
     oauthSession = null;
+    pkceStore.clear();
     res.json({ ok: true });
   });
 
@@ -172,9 +250,12 @@ async function startServer() {
   // Sync endpoint: Always uses athleteId = "0" (authenticated user) or OAuth session athleteId
   app.post('/api/intervals/sync', async (req, res) => {
     try {
+      const now = new Date();
+      const defaultOldest = new Date(now.getTime() - 28 * 86400000).toISOString().slice(0, 10);
+      const defaultNewest = new Date(now.getTime() + 28 * 86400000).toISOString().slice(0, 10);
       const {
-        oldest = '2026-10-26',
-        newest = '2026-11-08',
+        oldest = defaultOldest,
+        newest = defaultNewest,
       } = req.body || {};
 
       // "0" always resolves to the authenticated athlete in Intervals.icu
@@ -187,9 +268,9 @@ async function startServer() {
 
       if (!authHeader) {
         return res.status(200).json({
-          mode: 'demo',
+          mode: 'unauthenticated',
           syncedAt: new Date().toISOString(),
-          message: 'Synced workouts via Intervals.icu Web Login session.',
+          message: 'Not signed in.',
         });
       }
 
@@ -251,7 +332,7 @@ async function startServer() {
       const authHeader = buildAuthHeader(bearerToken);
 
       if (!authHeader) {
-        return res.status(200).json({ mode: 'demo', streams: null });
+        return res.status(200).json({ mode: 'unauthenticated', streams: null });
       }
 
       const headers: Record<string, string> = {

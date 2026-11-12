@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   ExternalLink,
@@ -10,63 +10,143 @@ import {
 
 interface IntervalsWebLoginSheetProps {
   defaultEmail?: string;
-  onSuccessLogin: (athleteName: string, email: string) => void;
+  onSuccessLogin: (athleteName: string, email: string, accessToken?: string) => void;
   onClose: () => void;
 }
 
 /**
- * Simulates the Android Chrome Custom Tab (`androidx.browser.customtabs.CustomTabsIntent`)
- * opening https://intervals.icu/oauth/authorize inside the mobile app, while also supporting
- * launching the real Intervals.icu OAuth 2.0 popup window when CLIENT_ID is configured.
+ * Launches the official Intervals.icu OAuth 2.0 + PKCE (S256) authorization flow (Client ID 1781).
  */
 export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
-  defaultEmail = 'athlete@example.com',
   onSuccessLogin,
   onClose,
 }) => {
-  const [email, setEmail] = useState<string>(defaultEmail);
-  const [password, setPassword] = useState<string>('••••••••••••');
-  const [step, setStep] = useState<'login_form' | 'consent'>('login_form');
-  const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
+  const [isOpening, setIsOpening] = useState<boolean>(false);
+  const [oauthUrl, setOauthUrl] = useState<string>('');
+  const [oauthNotice, setOauthNotice] = useState<string | null>(null);
 
-  const handleWebFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStep('consent');
-  };
+  // Pre-fetch the PKCE authorization URL so clicking "Authorize on Intervals.icu" opens the popup immediately
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/url')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.url) {
+          setOauthUrl(data.url);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const handleConfirmAuthorize = () => {
-    setIsAuthorizing(true);
-    setTimeout(() => {
-      const prefix = email.split('@')[0] || '';
-      const derivedName =
-        prefix && prefix !== 'athlete'
-          ? prefix.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-          : 'Intervals.icu Athlete';
-      onSuccessLogin(derivedName, email || defaultEmail);
-    }, 350);
-  };
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const athleteName = event.data.athleteName || 'Intervals.icu Athlete';
+        const accessToken = event.data.accessToken || '';
+        const athleteId = event.data.athleteId || '0';
+        if (accessToken) {
+          try {
+            localStorage.setItem(
+              'intervals_icu_oauth_token_v5',
+              JSON.stringify({
+                accessToken,
+                athleteName,
+                athleteId,
+                savedAt: new Date().toISOString(),
+              })
+            );
+          } catch {
+            // ignore
+          }
+        }
+        onSuccessLogin(athleteName, `ID: ${athleteId} (OAuth 2.0)`, accessToken);
+      } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        setIsOpening(false);
+        setOauthNotice(
+          event.data.error ||
+            'OAuth authorization did not complete. Please try again.'
+        );
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [onSuccessLogin]);
+
+  // Also poll /api/intervals/status while waiting in case cross-origin opener was stripped
+  useEffect(() => {
+    if (!isOpening) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/intervals/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data?.accessToken) {
+          const athleteName = data.athleteName || 'Intervals.icu Athlete';
+          const athleteId = data.athleteId || '0';
+          try {
+            localStorage.setItem(
+              'intervals_icu_oauth_token_v5',
+              JSON.stringify({
+                accessToken: data.accessToken,
+                athleteName,
+                athleteId,
+                savedAt: new Date().toISOString(),
+              })
+            );
+          } catch {
+            // ignore
+          }
+          onSuccessLogin(athleteName, `ID: ${athleteId} (OAuth 2.0)`, data.accessToken);
+        }
+      } catch {
+        // ignore
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [isOpening, onSuccessLogin]);
 
   const handleOpenRealIntervalsPopup = async () => {
     try {
-      const origin = window.location.origin;
-      const res = await fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`);
-      if (!res.ok) return;
-      const { url, oauthClientConfigured } = await res.json();
-      if (oauthClientConfigured && url) {
+      setIsOpening(true);
+      setOauthNotice(null);
+
+      if (oauthUrl) {
+        window.open(oauthUrl, 'intervals_oauth_popup', 'width=560,height=680');
+        // Refresh PKCE URL for any subsequent attempt
+        fetch('/api/auth/url')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.url) setOauthUrl(d.url);
+          })
+          .catch(() => {});
+        return;
+      }
+
+      const res = await fetch('/api/auth/url');
+      if (!res.ok) {
+        setIsOpening(false);
+        setOauthNotice('Failed to initialize OAuth URL.');
+        return;
+      }
+      const { url } = await res.json();
+      if (url) {
         window.open(url, 'intervals_oauth_popup', 'width=560,height=680');
       } else {
-        setStep('consent');
+        setIsOpening(false);
       }
     } catch {
-      setStep('consent');
+      setIsOpening(false);
+      setOauthNotice('Unable to reach server to construct OAuth URL.');
     }
   };
 
   return (
     <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-150">
-      {/* Android Chrome Custom Tab Container */}
       <div className="bg-[#181b24] border-t border-slate-700/90 rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92%]">
-        {/* Chrome Custom Tab Top URL Bar */}
+        {/* Top URL Bar */}
         <div className="px-3.5 py-2.5 bg-[#202430] border-b border-slate-700/80 flex items-center justify-between gap-2">
           <button
             type="button"
@@ -80,7 +160,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
           <div className="flex-1 px-3 py-1 rounded-full bg-[#12151e] border border-slate-700/80 flex items-center gap-1.5 min-w-0">
             <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
             <span className="text-[11px] font-mono text-slate-200 truncate">
-              https://intervals.icu/{step === 'login_form' ? 'login' : 'oauth/authorize'}
+              https://intervals.icu/oauth/authorize?client_id=1781
             </span>
           </div>
 
@@ -94,153 +174,63 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
           </button>
         </div>
 
-        {/* Original Intervals.icu Web Login / OAuth Consent Content */}
+        {/* Intervals.icu OAuth 2.0 PKCE Consent Content */}
         <div className="p-5 overflow-y-auto space-y-4 text-slate-100">
-          {/* Intervals.icu Brand Header */}
           <div className="text-center space-y-1.5">
             <img
               src="/pwa-512x512.png"
-              alt="Intervals Mobile Companion Logo"
+              alt="Intervals Companion Logo"
               referrerPolicy="no-referrer"
               className="w-14 h-14 rounded-2xl mx-auto border border-cyan-500/40 object-cover shadow-lg"
             />
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
               <Globe className="w-3.5 h-3.5" />
-              <span>intervals.icu Official Web Sign-In</span>
+              <span>intervals.icu OAuth 2.0 · Client ID #1781 (PKCE)</span>
             </div>
             <h2 className="text-lg font-extrabold tracking-tight pt-1">
-              {step === 'login_form'
-                ? 'Log in to Intervals.icu'
-                : 'Authorize Intervals.icu Companion'}
+              Sign in with Intervals.icu
             </h2>
             <p className="text-xs text-slate-400">
-              {step === 'login_form'
-                ? 'Sign in with your Intervals.icu account. No API key or Athlete ID required.'
-                : 'Grant read access to sync your training calendar and completed workouts.'}
+              Authenticate directly on Intervals.icu using OAuth 2.0 + PKCE (S256) to sync your live calendar and activities.
             </p>
           </div>
 
-          {step === 'login_form' ? (
-            <>
-              {/* Social / SSO Buttons matching Intervals.icu Web Login */}
-              <div className="grid grid-cols-1 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStep('consent')}
-                  className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-                >
-                  <span>Continue with Google ({defaultEmail})</span>
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStep('consent')}
-                    className="py-2 px-3 rounded-xl bg-[#fc4c02]/90 hover:bg-[#fc4c02] text-white text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    Log in with Strava
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStep('consent')}
-                    className="py-2 px-3 rounded-xl bg-[#007cc3] hover:bg-[#0288d1] text-white text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    Log in with Garmin
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-800" />
-                <span className="shrink mx-3 text-[10px] uppercase tracking-wider font-mono text-slate-500">
-                  Or Intervals.icu Email &amp; Password
-                </span>
-                <div className="flex-grow border-t border-slate-800" />
-              </div>
-
-              {/* Standard Intervals.icu Web Email + Password Form */}
-              <form onSubmit={handleWebFormSubmit} className="space-y-3">
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Email address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="athlete@example.com"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#10131b] border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#10131b] border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs sm:text-sm font-bold shadow-md transition-colors cursor-pointer"
-                >
-                  Log In
-                </button>
-              </form>
-            </>
-          ) : (
-            /* Step 2: Intervals.icu OAuth 2.0 Authorization Consent Screen */
-            <div className="space-y-4">
-              <div className="rounded-2xl bg-[#10131b] border border-slate-800 p-3.5 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span className="text-slate-400">Signed in as</span>
-                  <span className="font-mono font-bold text-slate-200">{email}</span>
-                </div>
-                <div className="space-y-1.5 pt-0.5">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-                    Permissions Requested
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>
-                      <strong>CALENDAR:READ</strong> — Incoming coach workouts &amp; targets
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>
-                      <strong>ACTIVITY:READ</strong> — Completed workouts &amp; intervals
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setStep('login_form')}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
-                >
-                  Switch Account
-                </button>
-                <button
-                  type="button"
-                  disabled={isAuthorizing}
-                  onClick={handleConfirmAuthorize}
-                  className="flex-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>{isAuthorizing ? 'Redirecting to App...' : 'Authorize & Continue'}</span>
-                </button>
-              </div>
+          {oauthNotice && (
+            <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs">
+              {oauthNotice}
             </div>
           )}
+
+          <div className="rounded-2xl bg-[#10131b] border border-slate-800 p-3.5 space-y-2 text-xs">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+              Permissions Requested
+            </div>
+            <div className="flex items-center gap-2 text-slate-200">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>CALENDAR:READ</strong> — Incoming scheduled workouts &amp; targets
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-200">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong>ACTIVITY:READ</strong> — Completed workouts &amp; intervals
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenRealIntervalsPopup}
+            className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md transition-colors cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>
+              {isOpening
+                ? 'Waiting for Intervals.icu Authorization...'
+                : 'Authorize on Intervals.icu'}
+            </span>
+          </button>
         </div>
       </div>
     </div>

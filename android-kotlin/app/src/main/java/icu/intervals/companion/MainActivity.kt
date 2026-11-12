@@ -142,7 +142,7 @@ fun IntervalsCompanionApp(
                             ) {
                                 Column {
                                     Text(
-                                        text = "intervals.icu",
+                                        text = "Intervals Companion",
                                         color = Color.White,
                                         fontSize = 22.sp,
                                         fontWeight = FontWeight.ExtraBold
@@ -172,7 +172,23 @@ fun IntervalsCompanionApp(
                             }
                         }
 
-                        if (statusFilter != "completed") {
+                        if (state.plannedWorkouts.isEmpty() && state.completedRuns.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No Data",
+                                        color = Color(0xFF64748B),
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        } else if (statusFilter != "completed") {
                             items(state.plannedWorkouts) { workout ->
                                 Card(
                                     modifier = Modifier

@@ -390,21 +390,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
               </div>
-
-              <div className="flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={onOpenWebLogin}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
-                    isLight
-                      ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                      : 'bg-[#10131b] border-slate-700 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  <Globe className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>{t('settings.account.switch')}</span>
-                </button>
-              </div>
             </div>
           ) : (
             <div className="space-y-3">

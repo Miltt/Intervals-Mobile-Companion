@@ -66,6 +66,28 @@ interface IntervalsApiService {
     ): List<IntervalsActivityDto>
 
     companion object {
+        /**
+         * Creates an IntervalsApiService authenticated via OAuth 2.0 PKCE Bearer access_token.
+         */
+        fun createWithBearerToken(accessToken: String): IntervalsApiService {
+            val client = OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    val request = chain.request().newBuilder()
+                        .header("Authorization", "Bearer $accessToken")
+                        .header("Accept", "application/json")
+                        .build()
+                    chain.proceed(request)
+                }
+                .build()
+
+            return Retrofit.Builder()
+                .baseUrl("https://intervals.icu/")
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(IntervalsApiService::class.java)
+        }
+
         fun create(apiKey: String): IntervalsApiService {
             val client = OkHttpClient.Builder()
                 .addInterceptor { chain ->

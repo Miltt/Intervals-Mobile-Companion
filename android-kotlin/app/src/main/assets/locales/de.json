@@ -12,7 +12,7 @@
   "calendar.week": "Woche {num}",
   "calendar.all_week": "Ganze Woche",
   "calendar.today": "Heute",
-  "calendar.rest_empty": "Ruhetag / Kein passendes Training",
+  "calendar.rest_empty": "Keine Daten",
   "calendar.status.all": "Alle Status",
   "calendar.status.incoming": "Nur Geplante",
   "calendar.status.done": "Nur Absolviert",
