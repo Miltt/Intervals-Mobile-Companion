@@ -143,5 +143,21 @@
   "settings.terms.liability_body": "Die Autoren und Mitwirkenden haften in keinem Fall für direkte, indirekte oder zufällige Schäden (einschließlich Datenverlust oder verpasster Trainings), die aus der Nutzung dieser App entstehen.",
   "settings.terms.health_title": "Trainings- & Gesundheitshinweis",
   "settings.terms.health_body": "Alle angezeigten Trainingsstrukturen, Zieltempi und Belastungswerte dienen ausschließlich zu Informationszwecken und ersetzen keine medizinische Beratung.",
-  "settings.privacy.subtitle": "PRIVACY.md im öffentlichen GitHub-Repository im Browser öffnen"
+  "settings.privacy.subtitle": "PRIVACY.md im öffentlichen GitHub-Repository im Browser öffnen",
+  "onboarding.step_of": "Schritt {current} von {total}",
+  "onboarding.back": "Zurück",
+  "onboarding.step1.title": "Nutzungsbedingungen",
+  "onboarding.step1.subtitle": "Bitte lies und akzeptiere die folgenden Bedingungen, um Intervals Companion zu nutzen.",
+  "onboarding.step1.accept_checkbox": "Ich habe die Nutzungsbedingungen gelesen und akzeptiere sie",
+  "onboarding.step1.accept_btn": "Akzeptieren & Weiter",
+  "onboarding.step2.title": "Darstellung & Sprache",
+  "onboarding.step2.subtitle": "Wähle dein Design und deine Sprache. Die Systemeinstellungen sind standardmäßig vorausgewählt.",
+  "onboarding.step2.continue_btn": "Weiter",
+  "onboarding.step3.title": "Mit Intervals.icu anmelden",
+  "onboarding.step3.subtitle": "Authentifiziere dich direkt über Intervals.icu (OAuth 2.0 + PKCE), um deinen Kalender und deine Aktivitäten zu synchronisieren.",
+  "onboarding.step3.permissions": "Angeforderte Berechtigungen",
+  "onboarding.step3.perm_calendar": "Geplante Trainings & Zielvorgaben",
+  "onboarding.step3.perm_activity": "Absolvierte Trainings & Intervalle",
+  "onboarding.step3.login_btn": "Auf Intervals.icu autorisieren",
+  "onboarding.step3.waiting_btn": "Warte auf Intervals.icu Autorisierung..."
 }

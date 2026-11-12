@@ -143,5 +143,21 @@
   "settings.terms.liability_body": "In nessun caso gli autori o i collaboratori saranno responsabili per danni diretti, indiretti o consequenziali (inclusa la perdita di dati di allenamento) derivanti dall'uso dell'applicazione.",
   "settings.terms.health_title": "Avvertenza Sportiva e Medica",
   "settings.terms.health_body": "Le strutture degli allenamenti, i passi target e le metriche mostrate hanno scopo puramente informativo e non sostituiscono il parere medico.",
-  "settings.privacy.subtitle": "Apri PRIVACY.md dal repository GitHub nel browser"
+  "settings.privacy.subtitle": "Apri PRIVACY.md dal repository GitHub nel browser",
+  "onboarding.step_of": "Passaggio {current} di {total}",
+  "onboarding.back": "Indietro",
+  "onboarding.step1.title": "Termini e Condizioni",
+  "onboarding.step1.subtitle": "Leggi e accetta i termini sottostanti per utilizzare Intervals Companion.",
+  "onboarding.step1.accept_checkbox": "Ho letto e accetto i Termini e Condizioni",
+  "onboarding.step1.accept_btn": "Accetta e Continua",
+  "onboarding.step2.title": "Aspetto e Lingua",
+  "onboarding.step2.subtitle": "Scegli il tema e la lingua. Le impostazioni di sistema sono selezionate automaticamente.",
+  "onboarding.step2.continue_btn": "Continua",
+  "onboarding.step3.title": "Accedi con Intervals.icu",
+  "onboarding.step3.subtitle": "Autenticati direttamente su Intervals.icu tramite OAuth 2.0 + PKCE (S256) per sincronizzare calendario e attività.",
+  "onboarding.step3.permissions": "Autorizzazioni richieste",
+  "onboarding.step3.perm_calendar": "Allenamenti in programma e obiettivi",
+  "onboarding.step3.perm_activity": "Allenamenti completati e intervalli",
+  "onboarding.step3.login_btn": "Autorizza su Intervals.icu",
+  "onboarding.step3.waiting_btn": "In attesa di autorizzazione su Intervals.icu..."
 }

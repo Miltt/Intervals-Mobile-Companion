@@ -9,20 +9,29 @@ import {
   Download,
   FileCode,
   FolderTree,
-  Footprints,
+  Lock,
+  MonitorSmartphone,
   RefreshCw,
   RotateCcw,
   Signal,
   Smartphone,
   Square,
+  Tablet,
   Wifi,
 } from 'lucide-react';
 import { KOTLIN_ANDROID_FILES, KotlinSourceFile } from '../data/kotlinProjectFiles';
+
+export type DeviceViewportMode =
+  | 'phone-portrait'
+  | 'tablet-portrait'
+  | 'tablet-landscape';
 
 interface AndroidEmulatorFrameProps {
   children: React.ReactNode;
   isEmulatorActive: boolean;
   onToggleEmulator: () => void;
+  deviceMode: DeviceViewportMode;
+  onChangeDeviceMode: (mode: DeviceViewportMode) => void;
   onBackGesture: () => void;
   onHomeGesture: () => void;
   onForceCollect: () => void;
@@ -33,6 +42,8 @@ interface AndroidEmulatorFrameProps {
 
 export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
   children,
+  deviceMode,
+  onChangeDeviceMode,
   onBackGesture,
   onHomeGesture,
   onForceCollect,
@@ -47,6 +58,13 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
     KOTLIN_ANDROID_FILES.find((f) => f.path.endsWith('MainActivity.kt')) || KOTLIN_ANDROID_FILES[0]
   );
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+
+  // Automatically collapse the IDE code pane when switching to Tablet Landscape so the 980px tablet fits comfortably
+  useEffect(() => {
+    if (deviceMode === 'tablet-landscape') {
+      setShowSplitIde(false);
+    }
+  }, [deviceMode]);
 
   useEffect(() => {
     const updateClock = () => {
@@ -91,6 +109,13 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const frameSizeClass =
+    deviceMode === 'tablet-landscape'
+      ? 'w-full max-w-[980px] lg:w-[980px] h-[680px] rounded-[38px]'
+      : deviceMode === 'tablet-portrait'
+      ? 'w-full max-w-[580px] sm:w-[580px] h-[840px] rounded-[42px]'
+      : 'w-[396px] sm:w-[412px] h-[840px] rounded-[46px]';
+
   return (
     <div className="min-h-screen bg-[#080a0f] text-slate-100 flex flex-col items-center justify-start py-3 px-3 sm:px-5 select-none">
       {/* Top Android Studio Native Kotlin Workspace Header */}
@@ -116,6 +141,52 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Device & Orientation Selector: Phone (Portrait Locked) | Tablet Portrait | Tablet Landscape */}
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-[#0c0f17] border border-slate-800">
+            <button
+              type="button"
+              onClick={() => onChangeDeviceMode('phone-portrait')}
+              title="Phone · Locked to Portrait only"
+              className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                deviceMode === 'phone-portrait'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Phone</span>
+              <Lock className="w-3 h-3 opacity-80" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeDeviceMode('tablet-portrait')}
+              title="Tablet Portrait (Same layout as Phone Portrait)"
+              className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                deviceMode === 'tablet-portrait'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Tablet className="w-3.5 h-3.5" />
+              <span>Tablet Portrait</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeDeviceMode('tablet-landscape')}
+              title="Tablet Landscape (Split 2-Pane View)"
+              className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                deviceMode === 'tablet-landscape'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MonitorSmartphone className="w-3.5 h-3.5" />
+              <span>Tablet Landscape</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -153,7 +224,7 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
         </div>
       </div>
 
-      {/* Main Split Workspace: Left = Native Kotlin Project Explorer & Editor | Right = Pixel 9 Pro Compose Preview */}
+      {/* Main Split Workspace: Left = Native Kotlin Project Explorer & Editor | Right = Device Compose Preview */}
       <div className="w-full max-w-[1440px] flex flex-col lg:flex-row items-start justify-center gap-4">
         {showSplitIde && (
           <div className="w-full lg:flex-1 h-[840px] rounded-2xl bg-[#0e1117] border border-slate-800/90 overflow-hidden flex flex-col select-text shadow-2xl">
@@ -228,16 +299,27 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
           </div>
         )}
 
-        {/* Right: Interactive Pixel 9 Pro · Android 15 Jetpack Compose Emulator */}
-        <div className="flex items-start justify-center gap-2.5 shrink-0 mx-auto">
-          <div className="relative w-[396px] sm:w-[412px] h-[840px] rounded-[46px] bg-[#0f1117] border-[10px] border-[#222734] shadow-2xl overflow-hidden flex flex-col ring-1 ring-white/10">
+        {/* Right: Interactive Pixel 9 Pro / Pixel Tablet · Android 15 Jetpack Compose Emulator */}
+        <div className="flex items-start justify-center gap-2.5 shrink-0 mx-auto max-w-full">
+          <div
+            className={`relative bg-[#0f1117] border-[10px] border-[#222734] shadow-2xl overflow-hidden flex flex-col ring-1 ring-white/10 transition-all duration-200 ${frameSizeClass}`}
+          >
             {/* Android Status Bar (Camera Punch-hole + Clock + 5G/WiFi/Battery) */}
             <div
               onClick={() => setShowNotificationShade((prev) => !prev)}
               className="h-9 px-6 bg-[#0f1117] flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-200 shrink-0 cursor-pointer z-40 border-b border-slate-800/40"
               title="Click to toggle Android Notification Shade"
             >
-              <span className="font-semibold">{clockText}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">{clockText}</span>
+                <span className="text-[10px] text-slate-400">
+                  {deviceMode === 'phone-portrait'
+                    ? 'Pixel 9 Pro · Portrait Locked'
+                    : deviceMode === 'tablet-portrait'
+                    ? 'Pixel Tablet · Portrait'
+                    : 'Pixel Tablet · Landscape'}
+                </span>
+              </div>
 
               {/* Center Punch-Hole Camera */}
               <div className="w-3.5 h-3.5 rounded-full bg-black border border-slate-800" />

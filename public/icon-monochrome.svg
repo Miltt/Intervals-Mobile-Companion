@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Transparent background monochrome silhouette for Android 13-15+ Material You Themed Icons -->
+  <!-- Left Sync Arc -->
+  <path d="M96 240C104 156 172 92 256 92" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M128 240C135 174 189 124 256 124" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <polygon points="256,64 304,108 256,152" fill="#FFFFFF"/>
+  <path d="M96 272C104 352 162 414 238 424" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M128 272C135 334 180 382 242 392" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <!-- Right Sync Arc -->
+  <path d="M416 240C408 160 350 98 274 88" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M384 240C377 178 332 130 270 120" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <path d="M416 272C408 356 340 420 256 420" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M384 272C377 338 323 388 256 388" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <polygon points="256,448 208,404 256,360" fill="#FFFFFF"/>
+  <!-- Center Pulse Waveform -->
+  <path d="M52 256H142L156 226L178 294L202 198L218 294L228 260L238 294L256 176L276 318L288 256H302L312 206L334 294L356 226L370 256H460" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Bottom Interval Bars -->
+  <rect x="172" y="316" width="12" height="32" rx="4" fill="#FFFFFF"/>
+  <rect x="212" y="316" width="12" height="52" rx="4" fill="#FFFFFF"/>
+  <rect x="252" y="340" width="12" height="28" rx="4" fill="#FFFFFF"/>
+  <rect x="292" y="340" width="12" height="28" rx="4" fill="#FFFFFF"/>
+  <rect x="330" y="316" width="12" height="32" rx="4" fill="#FFFFFF"/>
+</svg>

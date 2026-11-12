@@ -654,11 +654,25 @@ fun PlannedPaceStepDiagram(
 `,
   },
   {
+    path: 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+    title: 'ic_launcher.xml (Android 15+ Adaptive & Monochrome Icon)',
+    description: 'Android 13-15+ Adaptive Icon configuration with foreground, background, and monochrome (Minimal / Material You system-tinted) layers.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
+`,
+  },
+  {
     path: 'app/src/main/java/icu/intervals/companion/MainActivity.kt',
     title: 'MainActivity.kt',
-    description: 'Main Jetpack Compose activity with PullToRefreshBox (pull-down Force Collect), scrolling intervals.icu header, and auto-hiding floating bottom bar.',
+    description: 'Main Jetpack Compose activity enforcing Portrait lock on Phones (<600dp), 3-step Onboarding, Tablet Landscape 2-pane split view, and left/right card swipe.',
     content: `package icu.intervals.companion
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -669,6 +683,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -682,22 +697,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import icu.intervals.companion.model.CompletedRunActivity
-import icu.intervals.companion.model.PlannedRunWorkout
 import icu.intervals.companion.sync.IntervalsSyncWorker
-import icu.intervals.companion.ui.PlannedPaceStepDiagram
 import icu.intervals.companion.viewmodel.IntervalsViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Schedule twice-daily (12-hour) background sync via WorkManager
+        // Lock Phone (<600dp smallest width) to Portrait only; allow Tablets (>=600dp) to rotate between Portrait & Landscape
+        if (resources.configuration.smallestScreenWidthDp < 600) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+
+        // Schedule periodic background sync via WorkManager
         IntervalsSyncWorker.scheduleTwiceDailySync(this)
 
         setContent {
@@ -740,67 +761,145 @@ fun IntervalsCompanionApp(
     onForceCollect: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val config = LocalConfiguration.current
+    val isTabletLandscape =
+        config.smallestScreenWidthDp >= 600 &&
+        config.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     var activeTab by remember { mutableStateOf("calendar") }
     val listState = rememberLazyListState()
     val showFloatingBottomBar = listState.isScrollingUp()
+
+    // Auto-select first workout in Tablet Landscape when available
+    LaunchedEffect(isTabletLandscape, state.plannedWorkouts) {
+        if (isTabletLandscape && state.selectedPlannedWorkout == null && state.plannedWorkouts.isNotEmpty()) {
+            viewModel.selectPlannedWorkout(state.plannedWorkouts.first())
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F1117))
     ) {
-        // Pull-down gesture triggers Force Collect sync
         PullToRefreshBox(
             isRefreshing = state.isSyncing,
             onRefresh = onForceCollect,
             modifier = Modifier.fillMaxSize()
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(top = 14.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Scrollable "intervals.icu" header at the top of the scrolling layout
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
+            if (isTabletLandscape) {
+                // Tablet Landscape 2-Pane Split View (5 columns list / 7 columns detail)
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.weight(0.42f).fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "intervals.icu",
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = state.lastSyncedLabel,
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        items(state.plannedWorkouts) { workout ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectPlannedWorkout(workout) },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF181B24))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(workout.name, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "\${workout.date} · \${workout.durationLabel} · Load \${workout.load}",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Right Detail Pane with Horizontal Swipe Navigation
+                    Box(
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .fillMaxHeight()
+                            .background(Color(0xFF141720), RoundedCornerShape(16.dp))
+                            .pointerInput(state.plannedWorkouts, state.selectedPlannedWorkout) {
+                                detectHorizontalDragGestures { _, dragAmount ->
+                                    if (kotlin.math.abs(dragAmount) > 48f && state.plannedWorkouts.size > 1) {
+                                        val idx = state.plannedWorkouts.indexOf(state.selectedPlannedWorkout)
+                                        if (idx != -1) {
+                                            val dir = if (dragAmount < 0) 1 else -1
+                                            val nextIdx = (idx + dir + state.plannedWorkouts.size) % state.plannedWorkouts.size
+                                            viewModel.selectPlannedWorkout(state.plannedWorkouts[nextIdx])
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(16.dp)
+                    ) {
+                        state.selectedPlannedWorkout?.let { selected ->
+                            Column {
+                                Text(selected.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "\${selected.date} · \${selected.durationLabel} · \${selected.distanceKm} km",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
-
-                items(state.plannedWorkouts) { workout ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.selectPlannedWorkout(workout) },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF181B24))
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(workout.name, color = Color.White, fontWeight = FontWeight.Bold)
+            } else {
+                // Phone Portrait & Tablet Portrait Single-Column View
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(top = 14.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
                             Text(
-                                text = "\${workout.date} · \${workout.durationLabel} · \${workout.distanceKm} km · Load \${workout.load}",
+                                text = "Intervals Companion",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = state.lastSyncedLabel,
                                 color = Color(0xFF94A3B8),
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
+                        }
+                    }
+
+                    items(state.plannedWorkouts) { workout ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.selectPlannedWorkout(workout) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF181B24))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(workout.name, color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "\${workout.date} · \${workout.durationLabel} · \${workout.distanceKm} km · Load \${workout.load}",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
@@ -809,7 +908,7 @@ fun IntervalsCompanionApp(
 
         // Auto-hiding Floating Bottom Bar
         AnimatedVisibility(
-            visible = showFloatingBottomBar && state.selectedPlannedWorkout == null,
+            visible = showFloatingBottomBar && (state.selectedPlannedWorkout == null || isTabletLandscape),
             enter = slideInVertically(initialOffsetY = { it * 2 }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it * 2 }) + fadeOut(),
             modifier = Modifier
@@ -818,25 +917,16 @@ fun IntervalsCompanionApp(
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color(0xE6161B26))
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(Color(0xF2151829))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TextButton(onClick = { activeTab = "calendar" }) {
                     Text("Calendar", color = Color(0xFF38BDF8))
                 }
                 TextButton(onClick = { activeTab = "incoming" }) {
-                    Text("Incoming Runs", color = Color(0xFF94A3B8))
-                }
-                TextButton(onClick = {
-                    state.plannedWorkouts.firstOrNull()?.let { viewModel.selectPlannedWorkout(it) }
-                }) {
-                    Text("Next Workout", color = Color(0xFF94A3B8))
-                }
-                TextButton(onClick = { activeTab = "settings" }) {
-                    Text("Settings", color = Color(0xFF94A3B8))
+                    Text("Incoming", color = Color(0xFF94A3B8))
                 }
             }
         }
@@ -847,12 +937,11 @@ fun IntervalsCompanionApp(
   {
     path: 'app/src/main/java/icu/intervals/companion/ui/SettingsScreen.kt',
     title: 'SettingsScreen.kt',
-    description: 'Jetpack Compose Settings screen with Intervals.icu Web Browser Login (Chrome Custom Tabs OAuth 2.0 — no Athlete ID or API key needed), Activity Types (Run, Swim, Strength, Mobility, Pilates, Yoga, Ride), Auto-Sync Interval in hours (WorkManager), and System/Dark/Light theme selector.',
+    description: 'Jetpack Compose Settings screen with Back button across Phone & Tablet, plus 2-Pane Split View in Tablet Landscape.',
     content: `package icu.intervals.companion.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -868,9 +957,10 @@ val ALL_CONFIGURABLE_SPORTS = listOf("Run", "Swim", "Strength", "Mobility", "Pil
 
 data class UserSettingsState(
     val isLoggedIn: Boolean = true,
+    val hasAcceptedTerms: Boolean = true,
     val athleteName: String = "Intervals.icu Athlete",
     val autoSyncHours: Int = 12, // 6, 12, 24, or 0 (manual only)
-    val themeMode: AppThemeMode = AppThemeMode.DARK,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val enabledSports: Set<String> = setOf("Run", "Swim", "Strength", "Mobility"),
     val useMetricUnits: Boolean = true,
     val lookaheadDays: Int = 14,
@@ -881,21 +971,35 @@ data class UserSettingsState(
 @Composable
 fun SettingsScreen(
     settings: UserSettingsState,
+    isTabletLandscape: Boolean = false,
+    onExitSettings: () -> Unit,
     onUpdateSettings: (UserSettingsState) -> Unit,
     onLaunchBrowserLogin: () -> Unit,
     onLogout: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-        // 1. Intervals.icu Web Browser Login (CustomTabsIntent -> https://intervals.icu/oauth/authorize)
-        // 2. Activity Types (Run, Swim, Strength, Mobility, Pilates, Yoga, Ride)
-        // 3. Auto-Sync Interval (6h/12h/24h/Manual), 4. Theme (System/Dark/Light)
+    if (isTabletLandscape) {
+        // Tablet Landscape 2-Pane Split Settings (Left: Categories + Log Out, Right: Active Category Details)
+        Row(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Column(modifier = Modifier.weight(0.42f)) {
+                Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+            }
+            Column(modifier = Modifier.weight(0.58f)) {
+                Text("Account & Sync Preferences", color = Color(0xFF38BDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Settings", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+        }
     }
 }
 `,

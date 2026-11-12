@@ -143,5 +143,21 @@
   "settings.terms.liability_body": "En aucun cas les auteurs ou contributeurs ne pourront être tenus responsables des dommages directs ou indirects (y compris la perte de données d'entraînement) résultant de l'utilisation de l'application.",
   "settings.terms.health_title": "Avertissement sportif & médical",
   "settings.terms.health_body": "Les structures de séances, allures cibles et métriques affichées le sont uniquement à titre informatif et ne constituent pas un avis médical.",
-  "settings.privacy.subtitle": "Ouvrir PRIVACY.md depuis le dépôt GitHub dans le navigateur"
+  "settings.privacy.subtitle": "Ouvrir PRIVACY.md depuis le dépôt GitHub dans le navigateur",
+  "onboarding.step_of": "Étape {current} sur {total}",
+  "onboarding.back": "Retour",
+  "onboarding.step1.title": "Conditions générales",
+  "onboarding.step1.subtitle": "Veuillez lire et accepter les conditions ci-dessous pour utiliser Intervals Companion.",
+  "onboarding.step1.accept_checkbox": "J'ai lu et j'accepte les Conditions générales",
+  "onboarding.step1.accept_btn": "Accepter & Continuer",
+  "onboarding.step2.title": "Apparence & Langue",
+  "onboarding.step2.subtitle": "Choisissez votre thème et votre langue. Les paramètres système sont sélectionnés par défaut.",
+  "onboarding.step2.continue_btn": "Continuer",
+  "onboarding.step3.title": "Connexion avec Intervals.icu",
+  "onboarding.step3.subtitle": "Authentifiez-vous directement sur Intervals.icu via OAuth 2.0 + PKCE (S256) pour synchroniser votre calendrier et vos activités.",
+  "onboarding.step3.permissions": "Autorisations demandées",
+  "onboarding.step3.perm_calendar": "Séances planifiées & objectifs d'allure",
+  "onboarding.step3.perm_activity": "Séances terminées & intervalles",
+  "onboarding.step3.login_btn": "Autoriser sur Intervals.icu",
+  "onboarding.step3.waiting_btn": "En attente d'autorisation Intervals.icu..."
 }

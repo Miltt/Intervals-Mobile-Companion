@@ -12,7 +12,6 @@ import {
   FileText,
   Gauge,
   Globe,
-  Info,
   Languages,
   Laptop,
   LogOut,
@@ -51,12 +50,14 @@ const APP_BUILD_VERSION = 'v1.2.0 (Build 2026.11)';
 interface SettingsScreenProps {
   settings: AppSettings;
   isLight: boolean;
+  isTabletLandscape?: boolean;
   lastSyncLabel: string;
   nextSyncLabel: string;
   t: (key: string, params?: Record<string, string | number>) => string;
   availableLanguages: LocaleMeta[];
   activeSubMenu: SettingsSubMenu;
   onSelectSubMenu: (subMenu: SettingsSubMenu) => void;
+  onExitSettings?: () => void;
   onSyncLanguagesFromGitHub: () => Promise<number>;
   onUpdateSettings: (partial: Partial<AppSettings>) => void;
   onOpenWebLogin: () => void;
@@ -66,19 +67,23 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   isLight,
+  isTabletLandscape = false,
   lastSyncLabel,
   nextSyncLabel,
   t,
   availableLanguages,
   activeSubMenu,
   onSelectSubMenu,
+  onExitSettings,
   onSyncLanguagesFromGitHub,
   onUpdateSettings,
   onOpenWebLogin,
   onLogout,
 }) => {
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
-  const [showLanguageInfo, setShowLanguageInfo] = useState<boolean>(false);
+  const effectiveSubMenu: SettingsSubMenu = isTabletLandscape
+    ? activeSubMenu || 'account'
+    : activeSubMenu;
 
   const flashSaved = (msg: string) => {
     setSavedFeedback(msg);
@@ -112,6 +117,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     ? 'w-full rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 px-4 py-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer shadow-xs text-left'
     : 'w-full rounded-2xl bg-[#161923] hover:bg-[#1b2030] border border-slate-800/90 px-4 py-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer text-left';
 
+  const getMenuItemClass = (sub: Exclude<SettingsSubMenu, null>) => {
+    const isActive = isTabletLandscape && effectiveSubMenu === sub;
+    if (isActive) {
+      return isLight
+        ? 'w-full rounded-2xl bg-cyan-50/90 border border-cyan-500 ring-1 ring-cyan-500/30 px-4 py-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer shadow-xs text-left'
+        : 'w-full rounded-2xl bg-cyan-500/12 border border-cyan-500/70 ring-1 ring-cyan-500/30 px-4 py-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer text-left';
+    }
+    return menuItemClass;
+  };
+
   const labelClass = isLight
     ? 'text-xs font-bold uppercase tracking-wider text-slate-500 font-mono'
     : 'text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono';
@@ -133,14 +148,56 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   return (
     <div className="space-y-4 pb-8">
-      {/* Top Section: Settings Title & Subtitle (or Sub-Menu Header when inside a sub-menu) */}
+      {/* Top Section: Settings Title & Subtitle (or Sub-Menu Header when inside a sub-menu on Portrait) */}
       <div className="flex items-center justify-between gap-2">
-        {activeSubMenu === null ? (
-          <div>
-            <h1 className="text-base sm:text-lg font-extrabold tracking-tight">
-              {t('settings.title')}
-            </h1>
-            <p className={subTextClass}>{t('settings.subtitle')}</p>
+        {isTabletLandscape ? (
+          <div className="flex items-center gap-2.5">
+            {onExitSettings && (
+              <button
+                type="button"
+                onClick={onExitSettings}
+                aria-label="Back to Calendar"
+                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  isLight
+                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                    : 'bg-[#161923] border-slate-800 text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-base sm:text-lg font-extrabold tracking-tight">
+                {t('settings.title')} ·{' '}
+                <span className="text-cyan-500">
+                  {effectiveSubMenu ? subMenuTitleMap[effectiveSubMenu] : ''}
+                </span>
+              </h1>
+              <p className={subTextClass}>{t('settings.subtitle')}</p>
+            </div>
+          </div>
+        ) : activeSubMenu === null ? (
+          <div className="flex items-center gap-2.5">
+            {onExitSettings && (
+              <button
+                type="button"
+                onClick={onExitSettings}
+                aria-label="Back to Calendar"
+                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  isLight
+                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                    : 'bg-[#161923] border-slate-800 text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div>
+              <h1 className="text-base sm:text-lg font-extrabold tracking-tight">
+                {t('settings.title')}
+              </h1>
+              <p className={subTextClass}>{t('settings.subtitle')}</p>
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-2.5">
@@ -175,14 +232,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         )}
       </div>
 
-      {/* MAIN SETTINGS SUB-MENU LIST */}
-      {activeSubMenu === null && (
-        <div className="space-y-2.5">
+      <div
+        className={
+          isTabletLandscape
+            ? 'grid grid-cols-12 gap-4 items-start'
+            : 'space-y-4'
+        }
+      >
+      {/* MAIN SETTINGS SUB-MENU LIST (Left Pane on Tablet Landscape, Full View when activeSubMenu === null on Portrait) */}
+      {(activeSubMenu === null || isTabletLandscape) && (
+        <div className={isTabletLandscape ? 'col-span-5 space-y-2.5' : 'space-y-2.5'}>
           {/* 1. Account */}
           <button
             type="button"
             onClick={() => onSelectSubMenu('account')}
-            className={menuItemClass}
+            className={getMenuItemClass('account')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
@@ -206,7 +270,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={() => onSelectSubMenu('notifications')}
-            className={menuItemClass}
+            className={getMenuItemClass('notifications')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -231,7 +295,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={() => onSelectSubMenu('language')}
-            className={menuItemClass}
+            className={getMenuItemClass('language')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
@@ -255,7 +319,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={() => onSelectSubMenu('appearance')}
-            className={menuItemClass}
+            className={getMenuItemClass('appearance')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
@@ -277,7 +341,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={() => onSelectSubMenu('sync')}
-            className={menuItemClass}
+            className={getMenuItemClass('sync')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
@@ -303,7 +367,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={() => onSelectSubMenu('terms')}
-            className={menuItemClass}
+            className={getMenuItemClass('terms')}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
@@ -341,11 +405,36 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
             <ExternalLink className="w-4 h-4 text-slate-400 shrink-0" />
           </a>
+
+          {/* Log Out & Build Version inside Left Pane when in Tablet Landscape */}
+          {isTabletLandscape && (
+            <div className="pt-3 flex flex-col items-center justify-center text-center gap-2">
+              {settings.isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout();
+                    flashSaved(t('settings.account.not_signed_in'));
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('settings.account.logout')}</span>
+                </button>
+              )}
+
+              <div className="text-[11px] font-mono text-slate-500">
+                Intervals Companion · {APP_BUILD_VERSION}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* RIGHT PANE / DETAIL SUB-MENUS */}
+      <div className={isTabletLandscape ? 'col-span-7 min-w-0' : 'w-full'}>
       {/* SUB-MENU 1: ACCOUNT */}
-      {activeSubMenu === 'account' && (
+      {effectiveSubMenu === 'account' && (
         <div className={cardClass}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -408,7 +497,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
 
       {/* SUB-MENU 2: NOTIFICATIONS */}
-      {activeSubMenu === 'notifications' && (
+      {effectiveSubMenu === 'notifications' && (
         <div className={cardClass}>
           <div className="flex items-center gap-2">
             <Bell className="w-4 h-4 text-cyan-500" />
@@ -495,27 +584,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
 
       {/* SUB-MENU 3: LANGUAGE */}
-      {activeSubMenu === 'language' && (
+      {effectiveSubMenu === 'language' && (
         <div className={cardClass}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Languages className="w-4 h-4 text-cyan-500 shrink-0" />
               <span className={labelClass}>{t('settings.language.title')}</span>
-              <button
-                type="button"
-                onClick={() => setShowLanguageInfo((prev) => !prev)}
-                aria-label="Language info"
-                title="Language info"
-                className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                  showLanguageInfo
-                    ? 'bg-cyan-500/20 text-cyan-400'
-                    : isLight
-                    ? 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                    : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-800'
-                }`}
-              >
-                <Info className="w-3.5 h-3.5" />
-              </button>
             </div>
 
             <select
@@ -548,22 +622,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </select>
           </div>
 
-          {showLanguageInfo && (
-            <div
-              className={`p-3 rounded-xl border text-xs leading-relaxed ${
-                isLight
-                  ? 'bg-cyan-50/60 border-cyan-200 text-slate-700'
-                  : 'bg-[#10131b] border-cyan-500/30 text-slate-300'
-              }`}
-            >
-              {t('settings.language.desc')}
-            </div>
-          )}
+          <p className={`text-xs leading-relaxed ${subTextClass}`}>
+            {t('settings.language.desc')}
+          </p>
         </div>
       )}
 
       {/* SUB-MENU 4: APPEARANCE */}
-      {activeSubMenu === 'appearance' && (
+      {effectiveSubMenu === 'appearance' && (
         <div className={cardClass}>
           <div className="flex items-center gap-2">
             <Sun className="w-4 h-4 text-cyan-500" />
@@ -606,7 +672,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
 
       {/* SUB-MENU 5: SYNC */}
-      {activeSubMenu === 'sync' && (
+      {effectiveSubMenu === 'sync' && (
         <div className="space-y-3.5">
           {/* 5A. Activity Types to Upload & Display in Calendar */}
           <div className={cardClass}>
@@ -855,7 +921,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
 
       {/* SUB-MENU 6: TERMS AND CONDITIONS */}
-      {activeSubMenu === 'terms' && (
+      {effectiveSubMenu === 'terms' && (
         <div className={cardClass}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -929,8 +995,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       )}
 
-      {/* BOTTOM FOOTER: Centralized Log Out Button + Build Version (Only on main Settings menu) */}
-      {activeSubMenu === null && (
+      </div>
+      </div>
+
+      {/* BOTTOM FOOTER: Centralized Log Out Button + Build Version (Only on Portrait main Settings menu) */}
+      {activeSubMenu === null && !isTabletLandscape && (
         <div className="pt-4 flex flex-col items-center justify-center text-center gap-2.5">
           {settings.isLoggedIn && (
             <button

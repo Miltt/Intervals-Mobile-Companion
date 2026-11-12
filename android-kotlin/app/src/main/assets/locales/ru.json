@@ -143,5 +143,21 @@
   "settings.terms.liability_body": "Авторы и контрибьюторы ни при каких обстоятельствах не несут ответственности за любой прямой, косвенный или случайный ущерб (включая потерю данных тренировок или пропуск занятий), возникший при использовании приложения.",
   "settings.terms.health_title": "Спортивный и медицинский дисклеймер",
   "settings.terms.health_body": "Структура тренировок, целевой темп и показатели нагрузки носят исключительно информационный характер и не являются медицинской рекомендацией.",
-  "settings.privacy.subtitle": "Открыть файл PRIVACY.md из GitHub-репозитория в браузере"
+  "settings.privacy.subtitle": "Открыть файл PRIVACY.md из GitHub-репозитория в браузере",
+  "onboarding.step_of": "Шаг {current} из {total}",
+  "onboarding.back": "Назад",
+  "onboarding.step1.title": "Условия использования",
+  "onboarding.step1.subtitle": "Пожалуйста, ознакомьтесь и примите условия использования для работы с Intervals Companion.",
+  "onboarding.step1.accept_checkbox": "Я прочитал(а) и принимаю Условия использования",
+  "onboarding.step1.accept_btn": "Принять и продолжить",
+  "onboarding.step2.title": "Оформление и язык",
+  "onboarding.step2.subtitle": "Выберите тему оформления и язык интерфейса. По умолчанию установлены системные настройки.",
+  "onboarding.step2.continue_btn": "Продолжить",
+  "onboarding.step3.title": "Вход через Intervals.icu",
+  "onboarding.step3.subtitle": "Авторизуйтесь напрямую на Intervals.icu по протоколу OAuth 2.0 + PKCE (S256) для синхронизации календаря и тренировок.",
+  "onboarding.step3.permissions": "Запрашиваемые разрешения",
+  "onboarding.step3.perm_calendar": "Запланированные тренировки и целевой темп",
+  "onboarding.step3.perm_activity": "Выполненные тренировки и интервалы",
+  "onboarding.step3.login_btn": "Авторизоваться в Intervals.icu",
+  "onboarding.step3.waiting_btn": "Ожидание авторизации в Intervals.icu..."
 }

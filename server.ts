@@ -43,18 +43,14 @@ function buildAuthHeader(bearerToken?: string): string | null {
   return null;
 }
 
-const REGISTERED_WEB_REDIRECT_URI =
-  'https://ais-pre-5wnbvdgheoghwxovarqosc-930214768256.europe-west2.run.app/auth/callback';
-
-function getRedirectUri(): string {
+function getRedirectUri(originParam?: string): string {
+  if (originParam && originParam.startsWith('http')) {
+    return `${originParam.replace(/\/+$/, '')}/auth/callback`;
+  }
   const envUrl = (process.env.OAUTH_REDIRECT_URI || '').trim();
   if (envUrl) return envUrl;
-  const appUrl = (process.env.APP_URL || '').trim().replace(/\/+$/, '');
-  if (appUrl) {
-    // Normalize ais-dev- preview URL to ais-pre- so it matches the registered Intervals.icu Redirect URL
-    return `${appUrl.replace('://ais-dev-', '://ais-pre-')}/auth/callback`;
-  }
-  return REGISTERED_WEB_REDIRECT_URI;
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
+  return `${appUrl}/auth/callback`;
 }
 
 async function startServer() {
@@ -77,9 +73,10 @@ async function startServer() {
   });
 
   // 1. Construct Intervals.icu OAuth 2.0 + PKCE (S256) Web Browser Login URL
-  app.get('/api/auth/url', (_req, res) => {
+  app.get('/api/auth/url', (req, res) => {
     const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
-    const redirectUri = getRedirectUri();
+    const originParam = typeof req.query.origin === 'string' ? req.query.origin.trim() : '';
+    const redirectUri = getRedirectUri(originParam);
 
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = computeCodeChallengeS256(codeVerifier);

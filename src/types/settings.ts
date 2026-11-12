@@ -3,6 +3,8 @@ import { SportType } from './intervals';
 export type ThemeMode = 'system' | 'dark' | 'light';
 export type AuthMethod = 'oauth2' | 'server_env';
 export type UnitSystem = 'metric' | 'imperial';
+export type AppIconStyle = 'default' | 'minimal';
+export type AppIconPalette = 'cyan' | 'indigo' | 'emerald' | 'amber';
 
 export interface SportOptionMeta {
   sport: SportType;
@@ -58,11 +60,15 @@ export const CONFIGURABLE_SPORT_TYPES: SportOptionMeta[] = [
 
 export interface AppSettings {
   isLoggedIn: boolean;
+  hasAcceptedTerms: boolean;
+  hasCompletedOnboarding: boolean;
   athleteName: string;
   athleteEmail: string;
   language: string; // e.g. 'en' | 'de' | 'ru' | 'fr' | 'it' or any language from /public/locales/index.json
   autoSyncHours: 6 | 12 | 24 | 0; // 0 = Manual pull-to-refresh only
   themeMode: ThemeMode;
+  appIconStyle?: AppIconStyle;
+  appIconPalette?: AppIconPalette;
   units: UnitSystem;
   lookaheadDays: 7 | 14 | 28;
   wifiOnlySync: boolean;
@@ -71,17 +77,27 @@ export interface AppSettings {
   enabledSports: SportType[]; // Activity types checked in Settings to upload & show
 }
 
+export function getSystemDefaultLanguage(): string {
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    const code = navigator.language.slice(0, 2).toLowerCase();
+    if (['en', 'de', 'ru', 'fr', 'it'].includes(code)) {
+      return code;
+    }
+  }
+  return 'en';
+}
+
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   isLoggedIn: false,
+  hasAcceptedTerms: false,
+  hasCompletedOnboarding: false,
   athleteName: '',
   athleteEmail: '',
-  language:
-    typeof navigator !== 'undefined' &&
-    ['en', 'de', 'ru', 'fr', 'it'].includes(navigator.language.slice(0, 2).toLowerCase())
-      ? navigator.language.slice(0, 2).toLowerCase()
-      : 'en',
+  language: getSystemDefaultLanguage(),
   autoSyncHours: 12,
-  themeMode: 'dark',
+  themeMode: 'system',
+  appIconStyle: 'default',
+  appIconPalette: 'cyan',
   units: 'metric',
   lookaheadDays: 14,
   wifiOnlySync: false,
@@ -89,5 +105,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   workoutNotificationTime: '07:00',
   enabledSports: ['Run', 'Swim', 'Strength', 'Mobility'],
 };
+
+
 
 

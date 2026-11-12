@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Check,
   CheckCircle2,
+  Copy,
   ExternalLink,
   Globe,
   Lock,
@@ -23,12 +25,19 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
 }) => {
   const [isOpening, setIsOpening] = useState<boolean>(false);
   const [oauthUrl, setOauthUrl] = useState<string>('');
+  const [copiedUri, setCopiedUri] = useState<boolean>(false);
   const [oauthNotice, setOauthNotice] = useState<string | null>(null);
 
-  // Pre-fetch the PKCE authorization URL so clicking "Authorize on Intervals.icu" opens the popup immediately
+  const currentCallbackUri =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/auth/callback`
+      : 'https://ais-dev-5wnbvdgheoghwxovarqosc-930214768256.europe-west2.run.app/auth/callback';
+
+  // Pre-fetch the PKCE authorization URL for the current origin
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/url')
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled && data?.url) {
@@ -67,7 +76,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
         setIsOpening(false);
         setOauthNotice(
           event.data.error ||
-            'OAuth authorization did not complete. Please try again.'
+            'OAuth authorization did not complete. Please verify the Redirect URL below is added in Intervals.icu.'
         );
       }
     };
@@ -112,11 +121,11 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
     try {
       setIsOpening(true);
       setOauthNotice(null);
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
       if (oauthUrl) {
         window.open(oauthUrl, 'intervals_oauth_popup', 'width=560,height=680');
-        // Refresh PKCE URL for any subsequent attempt
-        fetch('/api/auth/url')
+        fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
             if (d?.url) setOauthUrl(d.url);
@@ -125,7 +134,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
         return;
       }
 
-      const res = await fetch('/api/auth/url');
+      const res = await fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`);
       if (!res.ok) {
         setIsOpening(false);
         setOauthNotice('Failed to initialize OAuth URL.');
@@ -141,6 +150,12 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
       setIsOpening(false);
       setOauthNotice('Unable to reach server to construct OAuth URL.');
     }
+  };
+
+  const handleCopyRedirectUri = () => {
+    navigator.clipboard?.writeText(currentCallbackUri).catch(() => {});
+    setCopiedUri(true);
+    setTimeout(() => setCopiedUri(false), 2000);
   };
 
   return (
@@ -216,6 +231,26 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
               <span>
                 <strong>ACTIVITY:READ</strong> — Completed workouts &amp; intervals
               </span>
+            </div>
+          </div>
+
+          {/* Required Redirect URI helper for Intervals.icu App Settings */}
+          <div className="rounded-2xl bg-[#10131b] border border-slate-800/90 p-3 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">
+                Active Redirect URL (Must be listed in Intervals.icu)
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyRedirectUri}
+                className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono flex items-center gap-1 cursor-pointer"
+              >
+                {copiedUri ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedUri ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+            <div className="font-mono text-[11px] text-slate-300 break-all select-all">
+              {currentCallbackUri}
             </div>
           </div>
 

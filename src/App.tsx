@@ -42,9 +42,13 @@ import { PlannedWorkoutDetail } from './components/PlannedWorkoutDetail';
 import { CompletedActivityDetail } from './components/CompletedActivityDetail';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { KotlinExportModal } from './components/KotlinExportModal';
-import { AndroidEmulatorFrame } from './components/AndroidEmulatorFrame';
+import {
+  AndroidEmulatorFrame,
+  DeviceViewportMode,
+} from './components/AndroidEmulatorFrame';
 import { SettingsScreen, SettingsSubMenu } from './components/SettingsScreen';
 import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
+import { OnboardingFlow, OnboardingStep } from './components/OnboardingFlow';
 import { useLocalization } from './i18n/useTranslation';
 
 const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
@@ -59,6 +63,19 @@ type SelectedItem =
   | { type: 'planned'; workout: PlannedWorkout }
   | { type: 'completed'; activity: CompletedActivity }
   | null;
+
+function detectViewportDeviceMode(): DeviceViewportMode {
+  if (typeof window === 'undefined') return 'phone-portrait';
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const isTouchOrStandalone =
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    window.matchMedia?.('(pointer: coarse)').matches;
+  if (!isTouchOrStandalone) return 'phone-portrait';
+  const minDim = Math.min(w, h);
+  if (minDim < 600) return 'phone-portrait'; // Phone is always locked to Portrait
+  return w > h ? 'tablet-landscape' : 'tablet-portrait';
+}
 
 function mergePayloads(
   prev: LiveIntervalsPayload,
@@ -106,10 +123,22 @@ export default function App() {
           parsed.athleteEmail === 'athlete@example.com' ||
           parsed.athleteName === 'Intervals.icu Athlete';
 
+        const effectiveLoggedIn = hasOAuth
+          ? true
+          : isLegacyMock
+            ? false
+            : Boolean(parsed.isLoggedIn);
+
         return {
           ...DEFAULT_APP_SETTINGS,
           ...parsed,
-          isLoggedIn: hasOAuth ? true : isLegacyMock ? false : Boolean(parsed.isLoggedIn),
+          isLoggedIn: effectiveLoggedIn,
+          hasAcceptedTerms: effectiveLoggedIn
+            ? true
+            : Boolean(parsed.hasAcceptedTerms),
+          hasCompletedOnboarding: effectiveLoggedIn
+            ? true
+            : Boolean(parsed.hasCompletedOnboarding),
           athleteName: hasOAuth
             ? oauthData.athleteName || parsed.athleteName || 'Intervals.icu Athlete'
             : isLegacyMock
@@ -133,6 +162,8 @@ export default function App() {
         return {
           ...DEFAULT_APP_SETTINGS,
           isLoggedIn: true,
+          hasAcceptedTerms: true,
+          hasCompletedOnboarding: true,
           athleteName: oauthData.athleteName || 'Intervals.icu Athlete',
           athleteEmail: oauthData.athleteId
             ? `ID: ${oauthData.athleteId} (OAuth 2.0)`
@@ -144,6 +175,11 @@ export default function App() {
     }
     return DEFAULT_APP_SETTINGS;
   });
+
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>(() =>
+    settings.hasAcceptedTerms ? 3 : 1
+  );
+  const isOnboardingActive = !settings.isLoggedIn || !settings.hasCompletedOnboarding;
 
   const {
     t,
@@ -189,8 +225,10 @@ export default function App() {
 
   // 0 = Current Week (always opens on the current week!), -1 = Previous Week, +1 = Next Week
   const [weekOffset, setWeekOffset] = useState<number>(0);
-  // Default selection is 'ALL' so the user sees the full Current Week (with Today highlighted)
-  const [selectedDayDate, setSelectedDayDate] = useState<string | 'ALL'>('ALL');
+  // Default selection is Today's ISO date so the calendar feed filters to Today on launch & after login
+  const [selectedDayDate, setSelectedDayDate] = useState<string | 'ALL'>(() =>
+    toLocalIsoDate(new Date())
+  );
   const [activeSection, setActiveSection] = useState<NavSection>('calendar');
   const [settingsSubMenu, setSettingsSubMenu] = useState<SettingsSubMenu>(null);
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
@@ -236,9 +274,27 @@ export default function App() {
   const [showKotlinModal, setShowKotlinModal] = useState<boolean>(false);
   const [showWebLoginSheet, setShowWebLoginSheet] = useState<boolean>(false);
   const [isEmulatorActive, setIsEmulatorActive] = useState<boolean>(true);
+  const [deviceMode, setDeviceMode] = useState<DeviceViewportMode>(() =>
+    detectViewportDeviceMode()
+  );
+  const manualDeviceModeRef = useRef<boolean>(false);
+  const isTabletLandscape = deviceMode === 'tablet-landscape';
+
+  // Automatically adapt between Tablet Portrait and Tablet Landscape on physical tablets while keeping Phones locked to Portrait
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      if (manualDeviceModeRef.current) return;
+      const detected = detectViewportDeviceMode();
+      setDeviceMode((prev) => (prev !== detected ? detected : prev));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Scroll & Floating Bottom Bar state
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const dayStripRef = useRef<HTMLDivElement | null>(null);
   const lastScrollTopRef = useRef<number>(0);
   const [showFloatingBottomBar, setShowFloatingBottomBar] = useState<boolean>(true);
 
@@ -446,12 +502,15 @@ export default function App() {
 
         handleUpdateSettings({
           isLoggedIn: true,
+          hasAcceptedTerms: true,
+          hasCompletedOnboarding: true,
           athleteName: name,
           athleteEmail: `Athlete #${athleteId}`,
         });
         setShowWebLoginSheet(false);
+        setActiveSection('calendar');
         setWeekOffset(0);
-        setSelectedDayDate('ALL');
+        setSelectedDayDate(toLocalIsoDate(new Date()));
         setSyncToast(`Signed in as ${name} via Intervals.icu OAuth`);
         performSync(true, accessToken);
       }
@@ -469,16 +528,6 @@ export default function App() {
   const syncTiming = useMemo(
     () => formatRelativeSyncTime(syncState.lastSyncedAt),
     [syncState.lastSyncedAt]
-  );
-
-  const allCompletedFiltered = useMemo(
-    () =>
-      multiWeeksRange.flatMap((w) =>
-        w.days.flatMap((d) =>
-          d.completedActivities.filter((a) => activeSportSet.has(a.sport))
-        )
-      ),
-    [multiWeeksRange, activeSportSet]
   );
 
   const todayIso = useMemo(() => toLocalIsoDate(new Date()), []);
@@ -500,6 +549,125 @@ export default function App() {
     return activeWeek.days.filter((d) => d.date === selectedDayDate);
   }, [activeWeek.days, selectedDayDate]);
 
+  // Unified ordered feed of cards in the active view (Incoming or Calendar) for Left/Right Swipe & Tablet Landscape Auto-Select
+  const activeFeedItems: Exclude<SelectedItem, null>[] = useMemo(() => {
+    if (activeSection === 'incoming') {
+      return allIncomingFiltered.map((workout) => ({
+        type: 'planned' as const,
+        workout,
+      }));
+    }
+    if (activeSection === 'calendar') {
+      const showCompleted = feedFilter === 'all' || feedFilter === 'completed';
+      const showScheduled = feedFilter === 'all' || feedFilter === 'scheduled';
+      const list: Exclude<SelectedItem, null>[] = [];
+      for (const day of visibleDays) {
+        if (showScheduled) {
+          for (const workout of day.scheduledWorkouts) {
+            if (activeSportSet.has(workout.sport)) {
+              list.push({ type: 'planned', workout });
+            }
+          }
+        }
+        if (showCompleted) {
+          for (const activity of day.completedActivities) {
+            if (activeSportSet.has(activity.sport)) {
+              list.push({ type: 'completed', activity });
+            }
+          }
+        }
+      }
+      return list;
+    }
+    return [];
+  }, [activeSection, allIncomingFiltered, feedFilter, visibleDays, activeSportSet]);
+
+  const selectedItemFeedIndex = useMemo(() => {
+    if (!selectedItem) return -1;
+    return activeFeedItems.findIndex((item) =>
+      item.type === 'planned' && selectedItem.type === 'planned'
+        ? item.workout.id === selectedItem.workout.id
+        : item.type === 'completed' && selectedItem.type === 'completed'
+        ? item.activity.id === selectedItem.activity.id
+        : false
+    );
+  }, [activeFeedItems, selectedItem]);
+
+  const activeSwipeIndexLabel =
+    activeFeedItems.length > 1 && selectedItemFeedIndex !== -1
+      ? `${selectedItemFeedIndex + 1} / ${activeFeedItems.length}`
+      : undefined;
+
+  // In Tablet Landscape, automatically select the first workout/activity of the active day or Incoming list
+  useEffect(() => {
+    if (
+      !isTabletLandscape ||
+      isOnboardingActive ||
+      activeSection === 'settings'
+    ) {
+      return;
+    }
+    if (activeFeedItems.length === 0) {
+      setSelectedItem(null);
+      return;
+    }
+    setSelectedItem((prev) => {
+      if (prev) {
+        const stillInFeed = activeFeedItems.some((item) =>
+          item.type === 'planned' && prev.type === 'planned'
+            ? item.workout.id === prev.workout.id
+            : item.type === 'completed' && prev.type === 'completed'
+            ? item.activity.id === prev.activity.id
+            : false
+        );
+        if (stillInFeed) return prev;
+      }
+      return activeFeedItems[0];
+    });
+  }, [
+    isTabletLandscape,
+    isOnboardingActive,
+    activeSection,
+    selectedDayDate,
+    weekOffset,
+    feedFilter,
+    activeFeedItems,
+  ]);
+
+  // Automatically center the chosen day button inside the horizontal week navigator strip
+  useEffect(() => {
+    if (
+      isOnboardingActive ||
+      activeSection !== 'calendar' ||
+      (selectedItem && !isTabletLandscape)
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      const container = dayStripRef.current;
+      if (!container) return;
+      const target = container.querySelector<HTMLElement>(
+        `[data-day-pill="${selectedDayDate}"]`
+      );
+      if (target) {
+        const scrollLeft =
+          target.offsetLeft - container.clientWidth / 2 + target.offsetWidth / 2;
+        container.scrollTo({
+          left: Math.max(0, scrollLeft),
+          behavior: 'smooth',
+        });
+      }
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [
+    selectedDayDate,
+    weekOffset,
+    activeSection,
+    selectedItem,
+    isTabletLandscape,
+    isOnboardingActive,
+  ]);
+
   // Scroll direction handler: hides floating bottom bar on scroll down, shows on scroll up
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const currentScrollTop = e.currentTarget.scrollTop;
@@ -517,14 +685,15 @@ export default function App() {
     lastScrollTopRef.current = currentScrollTop;
   }, []);
 
-  // Pull-down gesture handlers (disabled inside Settings)
+  // Pull-down gesture handlers (disabled inside Settings or Onboarding)
   const beginPull = (clientY: number) => {
     const scroller = scrollContainerRef.current;
     if (
       !scroller ||
       scroller.scrollTop > 2 ||
       syncState.isSyncing ||
-      activeSection === 'settings'
+      activeSection === 'settings' ||
+      isOnboardingActive
     ) {
       pullStartYRef.current = null;
       isPullingRef.current = false;
@@ -571,42 +740,31 @@ export default function App() {
     setShowFloatingBottomBar(true);
   };
 
-  const handleToggleWorkoutComplete = (workoutId: string) => {
-    if (selectedItem?.type === 'planned' && selectedItem.workout.id === workoutId) {
-      setSelectedItem((prev) =>
-        prev && prev.type === 'planned'
-          ? {
-              type: 'planned',
-              workout: {
-                ...prev.workout,
-                complianceStatus:
-                  prev.workout.complianceStatus === 'completed' ? 'upcoming' : 'completed',
-              },
-            }
-          : prev
-      );
-    }
-  };
-
   const handleSelectPlanned = (workout: PlannedWorkout) => {
     setIsFilterPopoverOpen(false);
     setSelectedItem({ type: 'planned', workout });
-    scrollToTop();
+    if (!isTabletLandscape) scrollToTop();
   };
 
   const handleSelectCompleted = (activity: CompletedActivity) => {
     setIsFilterPopoverOpen(false);
     setSelectedItem({ type: 'completed', activity });
-    scrollToTop();
+    if (!isTabletLandscape) scrollToTop();
   };
 
-  const handleStepCompletedActivity = (direction: -1 | 1) => {
-    if (selectedItem?.type !== 'completed' || allCompletedFiltered.length === 0) return;
-    const idx = allCompletedFiltered.findIndex((a) => a.id === selectedItem.activity.id);
-    if (idx === -1) return;
+  const handleStepActiveItem = (direction: -1 | 1) => {
+    if (
+      !selectedItem ||
+      activeFeedItems.length <= 1 ||
+      selectedItemFeedIndex === -1
+    ) {
+      return;
+    }
     const nextIdx =
-      (idx + direction + allCompletedFiltered.length) % allCompletedFiltered.length;
-    setSelectedItem({ type: 'completed', activity: allCompletedFiltered[nextIdx] });
+      (selectedItemFeedIndex + direction + activeFeedItems.length) %
+      activeFeedItems.length;
+    setSelectedItem(activeFeedItems[nextIdx]);
+    if (!isTabletLandscape) scrollToTop();
   };
 
   const handleToggleFilterSport = (sport: SportType) => {
@@ -622,7 +780,9 @@ export default function App() {
   };
 
   const showPullIndicator =
-    activeSection !== 'settings' && (pullDistance > 6 || syncState.isSyncing);
+    !isOnboardingActive &&
+    activeSection !== 'settings' &&
+    (pullDistance > 6 || syncState.isSyncing);
   const isReadyToRelease = pullDistance >= PULL_REFRESH_THRESHOLD;
 
   const formatDist = (km?: number, fallback?: string) => {
@@ -649,29 +809,50 @@ export default function App() {
     <AndroidEmulatorFrame
       isEmulatorActive={isEmulatorActive}
       onToggleEmulator={() => setIsEmulatorActive((prev) => !prev)}
+      deviceMode={deviceMode}
+      onChangeDeviceMode={(nextMode) => {
+        manualDeviceModeRef.current = true;
+        setDeviceMode(nextMode);
+      }}
       onBackGesture={() => {
+        if (isOnboardingActive) {
+          if (onboardingStep > 1) {
+            setOnboardingStep((prev) => (prev - 1) as OnboardingStep);
+            scrollToTop();
+          }
+          return;
+        }
         if (isFilterPopoverOpen) {
           setIsFilterPopoverOpen(false);
-        } else if (selectedItem) {
+        } else if (selectedItem && !isTabletLandscape) {
           setSelectedItem(null);
           setShowFloatingBottomBar(true);
-        } else if (activeSection === 'settings' && settingsSubMenu !== null) {
+        } else if (
+          activeSection === 'settings' &&
+          settingsSubMenu !== null &&
+          !isTabletLandscape
+        ) {
           setSettingsSubMenu(null);
           scrollToTop();
         } else if (activeSection !== 'calendar') {
           setSettingsSubMenu(null);
           setActiveSection('calendar');
           setShowFloatingBottomBar(true);
+        } else if (selectedItem && isTabletLandscape) {
+          setSelectedItem(null);
         }
       }}
       onHomeGesture={() => {
+        if (isOnboardingActive) return;
         setIsFilterPopoverOpen(false);
         setSelectedItem(null);
         setSettingsSubMenu(null);
         setActiveSection('calendar');
         setShowFloatingBottomBar(true);
       }}
-      onForceCollect={() => performSync(true)}
+      onForceCollect={() => {
+        if (!isOnboardingActive) performSync(true);
+      }}
       onOpenKotlinCode={() => setShowKotlinModal(true)}
       isSyncing={syncState.isSyncing}
       lastSyncLabel={syncTiming.lastSyncLabel}
@@ -681,11 +862,11 @@ export default function App() {
           isLight ? 'bg-slate-50 text-slate-900' : 'bg-[#0f1117] text-slate-100'
         }`}
       >
-        {/* Android Pull-Down to Force Collect Indicator (Hidden in Settings) */}
+        {/* Android Pull-Down to Force Collect Indicator (Hidden in Settings & Onboarding) */}
         <div
           style={{
             height:
-              activeSection === 'settings'
+              isOnboardingActive || activeSection === 'settings'
                 ? 0
                 : syncState.isSyncing
                 ? 48
@@ -760,6 +941,35 @@ export default function App() {
             </div>
           )}
 
+          {isOnboardingActive ? (
+            <OnboardingFlow
+              step={onboardingStep}
+              onStepChange={(nextStep) => {
+                setOnboardingStep(nextStep);
+                scrollToTop();
+              }}
+              settings={settings}
+              isLight={isLight}
+              t={t}
+              availableLanguages={availableLanguages}
+              onSyncLanguagesFromGitHub={syncLanguagesFromGitHub}
+              onUpdateSettings={handleUpdateSettings}
+              onSuccessLogin={(athleteName, email, accessToken) => {
+                handleUpdateSettings({
+                  isLoggedIn: true,
+                  hasAcceptedTerms: true,
+                  hasCompletedOnboarding: true,
+                  athleteName,
+                  athleteEmail: email,
+                });
+                setActiveSection('calendar');
+                setWeekOffset(0);
+                setSelectedDayDate(toLocalIsoDate(new Date()));
+                setSyncToast(`Signed in as ${athleteName} via Intervals.icu OAuth`);
+                performSync(true, accessToken);
+              }}
+            />
+          ) : (
           <main className="max-w-5xl mx-auto px-3.5 sm:px-5 pt-3.5 space-y-3.5">
             {/* Scrollable "Intervals Companion" header + Icon-only Settings button (Hidden in Settings) */}
             {activeSection !== 'settings' && (
@@ -808,29 +1018,50 @@ export default function App() {
               </div>
             )}
 
-            {/* Detailed View when a Scheduled Workout or Completed Activity is clicked */}
-            {selectedItem ? (
+            {/* Detailed View when a Scheduled Workout or Completed Activity is clicked (Full-view in Phone/Tablet Portrait) */}
+            {selectedItem && !isTabletLandscape ? (
               <section className="animate-in fade-in duration-150">
                 {selectedItem.type === 'planned' ? (
                   <PlannedWorkoutDetail
                     workout={selectedItem.workout}
+                    isLight={isLight}
                     t={t}
                     onClose={() => {
                       setSelectedItem(null);
                       setShowFloatingBottomBar(true);
                     }}
-                    onToggleComplete={handleToggleWorkoutComplete}
+                    onSwipePrev={
+                      activeFeedItems.length > 1
+                        ? () => handleStepActiveItem(-1)
+                        : undefined
+                    }
+                    onSwipeNext={
+                      activeFeedItems.length > 1
+                        ? () => handleStepActiveItem(1)
+                        : undefined
+                    }
+                    swipeIndexLabel={activeSwipeIndexLabel}
                   />
                 ) : (
                   <CompletedActivityDetail
                     activity={selectedItem.activity}
+                    isLight={isLight}
                     t={t}
                     onClose={() => {
                       setSelectedItem(null);
                       setShowFloatingBottomBar(true);
                     }}
-                    onPrevActivity={() => handleStepCompletedActivity(-1)}
-                    onNextActivity={() => handleStepCompletedActivity(1)}
+                    onSwipePrev={
+                      activeFeedItems.length > 1
+                        ? () => handleStepActiveItem(-1)
+                        : undefined
+                    }
+                    onSwipeNext={
+                      activeFeedItems.length > 1
+                        ? () => handleStepActiveItem(1)
+                        : undefined
+                    }
+                    swipeIndexLabel={activeSwipeIndexLabel}
                   />
                 )}
               </section>
@@ -839,6 +1070,7 @@ export default function App() {
               <SettingsScreen
                 settings={settings}
                 isLight={isLight}
+                isTabletLandscape={isTabletLandscape}
                 lastSyncLabel={syncTiming.lastSyncLabel}
                 nextSyncLabel={syncTiming.nextSyncLabel}
                 t={t}
@@ -846,6 +1078,12 @@ export default function App() {
                 activeSubMenu={settingsSubMenu}
                 onSelectSubMenu={(sub) => {
                   setSettingsSubMenu(sub);
+                  if (!isTabletLandscape) scrollToTop();
+                }}
+                onExitSettings={() => {
+                  setSettingsSubMenu(null);
+                  setActiveSection('calendar');
+                  setShowFloatingBottomBar(true);
                   scrollToTop();
                 }}
                 onSyncLanguagesFromGitHub={syncLanguagesFromGitHub}
@@ -866,14 +1104,30 @@ export default function App() {
                     isSyncing: false,
                     athleteName: '',
                   }));
+                  setOnboardingStep(3);
+                  setSettingsSubMenu(null);
+                  setActiveSection('calendar');
                   handleUpdateSettings({
                     isLoggedIn: false,
+                    hasAcceptedTerms: true,
+                    hasCompletedOnboarding: false,
                     athleteName: '',
                     athleteEmail: '',
                   });
+                  scrollToTop();
                 }}
               />
-            ) : activeSection === 'incoming' ? (
+            ) : (
+              /* Calendar & Incoming Views: Single-Column in Phone/Tablet Portrait, Minimal 2-Pane Split in Tablet Landscape */
+              <div
+                className={
+                  isTabletLandscape
+                    ? 'grid grid-cols-12 gap-4 items-start'
+                    : 'block'
+                }
+              >
+                <div className={isTabletLandscape ? 'col-span-5 min-w-0' : 'w-full'}>
+                  {activeSection === 'incoming' ? (
               /* Dedicated Clean Incoming Coach Workouts View (Install App link removed) */
               <section className="space-y-3.5">
                 <div
@@ -916,6 +1170,10 @@ export default function App() {
                       workout.steps.reduce((acc, s) => Math.max(acc, s.endSec), 0) || 1800
                     );
 
+                    const isCardSelected =
+                      selectedItem?.type === 'planned' &&
+                      selectedItem.workout.id === workout.id;
+
                     return (
                       <button
                         key={workout.id}
@@ -923,7 +1181,11 @@ export default function App() {
                         onClick={() => handleSelectPlanned(workout)}
                         className={`w-full text-left rounded-2xl border p-3.5 space-y-2.5 transition-all cursor-pointer group ${
                           isLight
-                            ? 'bg-white border-slate-200 hover:border-cyan-500 shadow-xs'
+                            ? isCardSelected
+                              ? 'bg-white border-cyan-500 ring-1 ring-cyan-500/40 shadow-md'
+                              : 'bg-white border-slate-200 hover:border-cyan-500 shadow-xs'
+                            : isCardSelected
+                            ? 'bg-[#161923] border-cyan-400 ring-1 ring-cyan-400/50 shadow-lg'
                             : 'bg-[#161923] border-slate-800/90 hover:border-cyan-500/60'
                         }`}
                       >
@@ -1069,7 +1331,7 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               setWeekOffset(0);
-                              setSelectedDayDate('ALL');
+                              setSelectedDayDate(toLocalIsoDate(new Date()));
                             }}
                             className="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-400 text-[10px] font-mono font-bold hover:bg-sky-500/25 cursor-pointer"
                           >
@@ -1109,9 +1371,13 @@ export default function App() {
                   </div>
 
                   {/* Compact 7-Day Selector Strip */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+                  <div
+                    ref={dayStripRef}
+                    className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5 scroll-smooth"
+                  >
                     <button
                       type="button"
+                      data-day-pill="ALL"
                       onClick={() => setSelectedDayDate('ALL')}
                       className={`min-h-[44px] px-3 py-1 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
                         selectedDayDate === 'ALL'
@@ -1137,6 +1403,7 @@ export default function App() {
                         <button
                           key={day.date}
                           type="button"
+                          data-day-pill={day.date}
                           onClick={() => setSelectedDayDate(isSelected ? 'ALL' : day.date)}
                           className={`min-h-[44px] min-w-[60px] px-2.5 py-1 rounded-xl flex flex-col items-center justify-center transition-colors shrink-0 cursor-pointer border ${
                             isSelected
@@ -1235,6 +1502,11 @@ export default function App() {
                               <PlannedWorkoutCard
                                 key={workout.id}
                                 workout={workout}
+                                isSelected={
+                                  selectedItem?.type === 'planned' &&
+                                  selectedItem.workout.id === workout.id
+                                }
+                                isLight={isLight}
                                 t={t}
                                 onSelect={handleSelectPlanned}
                               />
@@ -1249,6 +1521,11 @@ export default function App() {
                               <CompletedActivityCard
                                 key={activity.id}
                                 activity={activity}
+                                isSelected={
+                                  selectedItem?.type === 'completed' &&
+                                  selectedItem.activity.id === activity.id
+                                }
+                                isLight={isLight}
                                 t={t}
                                 onSelect={handleSelectCompleted}
                               />
@@ -1266,14 +1543,95 @@ export default function App() {
                   })}
                 </div>
               </section>
+                  )}
+                </div>
+
+                {/* Right Detail Pane for Tablet Landscape (Minimal 2-Pane Master-Detail Support) */}
+                {isTabletLandscape && (
+                  <div className="col-span-7 min-w-0 sticky top-2">
+                    {selectedItem ? (
+                      selectedItem.type === 'planned' ? (
+                        <PlannedWorkoutDetail
+                          workout={selectedItem.workout}
+                          isLight={isLight}
+                          t={t}
+                          onClose={() => {
+                            setSelectedItem(null);
+                            setShowFloatingBottomBar(true);
+                          }}
+                          onSwipePrev={
+                            activeFeedItems.length > 1
+                              ? () => handleStepActiveItem(-1)
+                              : undefined
+                          }
+                          onSwipeNext={
+                            activeFeedItems.length > 1
+                              ? () => handleStepActiveItem(1)
+                              : undefined
+                          }
+                          swipeIndexLabel={activeSwipeIndexLabel}
+                        />
+                      ) : (
+                        <CompletedActivityDetail
+                          activity={selectedItem.activity}
+                          isLight={isLight}
+                          t={t}
+                          onClose={() => {
+                            setSelectedItem(null);
+                            setShowFloatingBottomBar(true);
+                          }}
+                          onSwipePrev={
+                            activeFeedItems.length > 1
+                              ? () => handleStepActiveItem(-1)
+                              : undefined
+                          }
+                          onSwipeNext={
+                            activeFeedItems.length > 1
+                              ? () => handleStepActiveItem(1)
+                              : undefined
+                          }
+                          swipeIndexLabel={activeSwipeIndexLabel}
+                        />
+                      )
+                    ) : (
+                      <div
+                        className={`rounded-2xl border p-8 text-center space-y-2 ${
+                          isLight
+                            ? 'bg-white border-slate-200 text-slate-600 shadow-xs'
+                            : 'bg-[#161923] border-slate-800/80 text-slate-400'
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-500">
+                          <Activity className="w-5 h-5" />
+                        </div>
+                        <div
+                          className={`text-sm font-bold ${
+                            isLight ? 'text-slate-800' : 'text-slate-200'
+                          }`}
+                        >
+                          Tablet Landscape Split View
+                        </div>
+                        <p className="text-xs max-w-sm mx-auto leading-relaxed">
+                          Select any workout or completed activity card on the left to inspect its pace diagram, intervals, and telemetry side-by-side.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </main>
+          )}
         </div>
 
         {/* Floating Filter Sheet (Opened by the Google Photos-style bottom-right Circular Filter Button) */}
-        {isFilterPopoverOpen && !selectedItem && activeSection !== 'settings' && (
+        {!isOnboardingActive && isFilterPopoverOpen && (!selectedItem || isTabletLandscape) && activeSection !== 'settings' && (
           <div
-            className={`absolute bottom-22 left-4 right-4 z-40 rounded-3xl border p-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-150 ${
+            className={`absolute bottom-22 z-40 rounded-3xl border p-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-150 ${
+              isTabletLandscape
+                ? 'w-[360px] left-1/2 -translate-x-1/2'
+                : 'left-4 right-4 max-w-md mx-auto'
+            } ${
               isLight
                 ? 'bg-white/95 border-slate-200 text-slate-900'
                 : 'bg-[#151829]/96 border-white/15 text-slate-100'
@@ -1397,12 +1755,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Google Photos-Style Floating Bottom Dock + Detached Circular Filter Button (Hidden in Settings) */}
-        {activeSection !== 'settings' && (
+        {/* Google Photos-Style Floating Bottom Dock + Detached Circular Filter Button (Hidden in Settings & Onboarding) */}
+        {!isOnboardingActive && activeSection !== 'settings' && (
         <div
           aria-label="App navigation and filter"
           className={`absolute bottom-4 left-4 right-4 z-30 flex items-center justify-center gap-3 pointer-events-none transition-all duration-300 ${
-            showFloatingBottomBar && !selectedItem
+            showFloatingBottomBar && (!selectedItem || isTabletLandscape)
               ? 'translate-y-0 opacity-100'
               : 'translate-y-24 opacity-0'
           }`}
@@ -1480,12 +1838,14 @@ export default function App() {
             onSuccessLogin={(athleteName, email, accessToken) => {
               handleUpdateSettings({
                 isLoggedIn: true,
+                hasAcceptedTerms: true,
+                hasCompletedOnboarding: true,
                 athleteName,
                 athleteEmail: email,
               });
               setShowWebLoginSheet(false);
               setWeekOffset(0);
-              setSelectedDayDate('ALL');
+              setSelectedDayDate(toLocalIsoDate(new Date()));
               setSyncToast(`Signed in as ${athleteName} via Intervals.icu OAuth`);
               performSync(true, accessToken);
             }}
