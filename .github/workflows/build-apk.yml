@@ -87,7 +87,14 @@ jobs:
                   if (data != null && "intervalscompanion".equals(data.getScheme())) {
                       String code = data.getQueryParameter("code");
                       if (code != null && !code.isEmpty() && getBridge() != null && getBridge().getWebView() != null) {
-                          final String targetUrl = getBridge().getServerUrl() + "/?code=" + Uri.encode(code);
+                          String localUrl = getBridge().getLocalUrl();
+                          if (localUrl == null || localUrl.isEmpty() || localUrl.contains("null")) {
+                              localUrl = "https://localhost";
+                          }
+                          if (localUrl.endsWith("/")) {
+                              localUrl = localUrl.substring(0, localUrl.length() - 1);
+                          }
+                          final String targetUrl = localUrl + "/?code=" + Uri.encode(code);
                           getBridge().getWebView().post(() -> getBridge().getWebView().loadUrl(targetUrl));
                       }
                   }

@@ -515,6 +515,8 @@ export default function App() {
     [settings.lookaheadDays, autoSyncIntervalMs, handleUpdateSettings]
   );
 
+  const handledOAuthCodeRef = useRef<string | null>(null);
+
   // Listen for OAuth 2.0 Web Browser Login popup completion OR Android APK Deep-Link (`intervalscompanion://oauth/callback?code=...`)
   useEffect(() => {
     const completeOAuthLogin = (name: string, athleteId: string, accessToken: string) => {
@@ -558,12 +560,17 @@ export default function App() {
     };
 
     const handleDeepLinkCode = async (code: string) => {
+      if (!code || handledOAuthCodeRef.current === code) return;
+      handledOAuthCodeRef.current = code;
+
+      // Immediately clean `?code=` from URL bar so re-renders never re-trigger exchange
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       try {
+        setSyncToast('Completing Intervals.icu sign-in...');
         const exchanged = await exchangeNativePkceCode(code);
-        // Clean `?code=` from URL bar if present
-        if (typeof window !== 'undefined' && window.history?.replaceState) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
         completeOAuthLogin(exchanged.athleteName, exchanged.athleteId, exchanged.accessToken);
       } catch (err) {
         setSyncToast(
