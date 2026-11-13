@@ -20,21 +20,21 @@ class IntervalsSyncWorker(
     }
 
     companion object {
-        private const val UNIQUE_PERIODIC_WORK = "intervals_12h_periodic_sync"
+        private const val UNIQUE_PERIODIC_WORK = "intervals_24h_periodic_sync"
         private const val UNIQUE_FORCE_COLLECT_WORK = "intervals_force_collect_now"
 
-        fun scheduleTwiceDailySync(context: Context) {
+        fun scheduleTwiceDailySync(context: Context, intervalHours: Long = 24L, wifiOnly: Boolean = false) {
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                 .build()
 
-            val request = PeriodicWorkRequestBuilder<IntervalsSyncWorker>(12, TimeUnit.HOURS)
+            val request = PeriodicWorkRequestBuilder<IntervalsSyncWorker>(intervalHours, TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_PERIODIC_WORK,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
         }

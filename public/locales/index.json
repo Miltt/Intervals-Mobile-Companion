@@ -11,6 +11,13 @@
       "file": "en.json"
     },
     {
+      "code": "es",
+      "name": "Spanish",
+      "nativeName": "Español",
+      "flag": "🇪🇸",
+      "file": "es.json"
+    },
+    {
       "code": "de",
       "name": "German",
       "nativeName": "Deutsch",

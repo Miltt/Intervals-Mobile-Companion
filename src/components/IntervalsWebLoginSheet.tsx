@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Check,
   CheckCircle2,
-  Copy,
   ExternalLink,
   Globe,
   Lock,
@@ -25,13 +23,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
 }) => {
   const [isOpening, setIsOpening] = useState<boolean>(false);
   const [oauthUrl, setOauthUrl] = useState<string>('');
-  const [copiedUri, setCopiedUri] = useState<boolean>(false);
   const [oauthNotice, setOauthNotice] = useState<string | null>(null);
-
-  const currentCallbackUri =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/auth/callback`
-      : 'https://ais-dev-5wnbvdgheoghwxovarqosc-930214768256.europe-west2.run.app/auth/callback';
 
   // Pre-fetch the PKCE authorization URL for the current origin
   useEffect(() => {
@@ -76,7 +68,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
         setIsOpening(false);
         setOauthNotice(
           event.data.error ||
-            'OAuth authorization did not complete. Please verify the Redirect URL below is added in Intervals.icu.'
+            'OAuth authorization did not complete. Please try again.'
         );
       }
     };
@@ -152,12 +144,6 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
     }
   };
 
-  const handleCopyRedirectUri = () => {
-    navigator.clipboard?.writeText(currentCallbackUri).catch(() => {});
-    setCopiedUri(true);
-    setTimeout(() => setCopiedUri(false), 2000);
-  };
-
   return (
     <div className="absolute inset-0 z-50 bg-black/75 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-150">
       <div className="bg-[#181b24] border-t border-slate-700/90 rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92%]">
@@ -231,26 +217,6 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
               <span>
                 <strong>ACTIVITY:READ</strong> — Completed workouts &amp; intervals
               </span>
-            </div>
-          </div>
-
-          {/* Required Redirect URI helper for Intervals.icu App Settings */}
-          <div className="rounded-2xl bg-[#10131b] border border-slate-800/90 p-3 space-y-1.5 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">
-                Active Redirect URL (Must be listed in Intervals.icu)
-              </span>
-              <button
-                type="button"
-                onClick={handleCopyRedirectUri}
-                className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono flex items-center gap-1 cursor-pointer"
-              >
-                {copiedUri ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedUri ? 'Copied' : 'Copy'}</span>
-              </button>
-            </div>
-            <div className="font-mono text-[11px] text-slate-300 break-all select-all">
-              {currentCallbackUri}
             </div>
           </div>
 

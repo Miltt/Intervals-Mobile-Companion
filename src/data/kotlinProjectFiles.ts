@@ -340,7 +340,6 @@ class IntervalsRepository(
         )
 
         val plannedRuns = rawEvents
-            .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
                 val durationSec = dto.moving_time ?: dto.workout_doc?.duration ?: 0
                 val distKm = ((dto.distance ?: dto.workout_doc?.distance ?: 0.0) / 1000.0)
@@ -349,7 +348,7 @@ class IntervalsRepository(
                     id = dto.id.toString(),
                     date = dto.start_date_local.take(10),
                     startTime = dto.start_date_local.drop(11).take(5),
-                    name = dto.name ?: "Scheduled Run",
+                    name = dto.name ?: "Scheduled \${dto.type ?: "Workout"}",
                     durationSec = durationSec,
                     durationLabel = "\${durationSec / 60}m",
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
@@ -363,7 +362,6 @@ class IntervalsRepository(
             }
 
         val completedRuns = rawActivities
-            .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
                 val durationSec = dto.moving_time ?: 0
                 val distKm = ((dto.distance ?: 0.0) / 1000.0)
@@ -371,7 +369,7 @@ class IntervalsRepository(
                     id = dto.id,
                     date = dto.start_date_local.take(10),
                     startTime = dto.start_date_local.drop(11).take(5),
-                    name = dto.name ?: "Completed Run",
+                    name = dto.name ?: "\${dto.type ?: "Completed"} Activity",
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
                     movingTimeLabel = "\${durationSec / 60}m",
                     paceFormatted = "—",
@@ -416,21 +414,21 @@ class IntervalsSyncWorker(
     }
 
     companion object {
-        private const val UNIQUE_PERIODIC_WORK = "intervals_12h_periodic_sync"
+        private const val UNIQUE_PERIODIC_WORK = "intervals_24h_periodic_sync"
         private const val UNIQUE_FORCE_COLLECT_WORK = "intervals_force_collect_now"
 
-        fun scheduleTwiceDailySync(context: Context) {
+        fun scheduleDailySync(context: Context, intervalHours: Long = 24L, wifiOnly: Boolean = false) {
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                 .build()
 
-            val request = PeriodicWorkRequestBuilder<IntervalsSyncWorker>(12, TimeUnit.HOURS)
+            val request = PeriodicWorkRequestBuilder<IntervalsSyncWorker>(intervalHours, TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_PERIODIC_WORK,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
         }
@@ -718,8 +716,8 @@ class MainActivity : ComponentActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
 
-        // Schedule periodic background sync via WorkManager
-        IntervalsSyncWorker.scheduleTwiceDailySync(this)
+        // Schedule periodic background sync via WorkManager (default 24h, Wi-Fi only OFF)
+        IntervalsSyncWorker.scheduleDailySync(this, intervalHours = 24L, wifiOnly = false)
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -953,19 +951,17 @@ import androidx.compose.ui.unit.sp
 
 enum class AppThemeMode { SYSTEM, DARK, LIGHT }
 
-val ALL_CONFIGURABLE_SPORTS = listOf("Run", "Swim", "Strength", "Mobility", "Pilates", "Yoga", "Ride")
-
 data class UserSettingsState(
     val isLoggedIn: Boolean = true,
     val hasAcceptedTerms: Boolean = true,
     val athleteName: String = "Intervals.icu Athlete",
-    val autoSyncHours: Int = 12, // 6, 12, 24, or 0 (manual only)
+    val autoSyncHours: Int = 24, // Default: 24h (options: 6, 12, 24, or 0 manual)
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
-    val enabledSports: Set<String> = setOf("Run", "Swim", "Strength", "Mobility"),
-    val useMetricUnits: Boolean = true,
+    val useMetricUnits: Boolean = java.util.Locale.getDefault().country !in setOf("US", "LR", "MM", "GB"),
     val lookaheadDays: Int = 14,
-    val wifiOnlySync: Boolean = false,
-    val morningReminder: Boolean = true
+    val wifiOnlySync: Boolean = false, // Default: Off
+    val morningReminder: Boolean = true, // Default: On
+    val morningReminderTime: String = "07:00" // Default: 7:00 AM
 )
 
 @Composable

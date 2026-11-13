@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import indexManifest from '../../public/locales/index.json';
 import enDict from '../../public/locales/en.json';
+import esDict from '../../public/locales/es.json';
 import deDict from '../../public/locales/de.json';
 import ruDict from '../../public/locales/ru.json';
 import frDict from '../../public/locales/fr.json';
@@ -18,14 +19,15 @@ export type TranslationDict = Record<string, string>;
 
 const BUNDLED_DICTIONARIES: Record<string, TranslationDict> = {
   en: enDict,
+  es: esDict,
   de: deDict,
   ru: ruDict,
   fr: frDict,
   it: itDict,
 };
 
-const REMOTE_MANIFEST_CACHE_KEY = 'intervals_icu_locales_manifest_v1';
-const REMOTE_DICTS_CACHE_KEY = 'intervals_icu_locales_dicts_v1';
+const REMOTE_MANIFEST_CACHE_KEY = 'intervals_icu_locales_manifest_v2';
+const REMOTE_DICTS_CACHE_KEY = 'intervals_icu_locales_dicts_v2';
 export const GITHUB_LOCALES_BASE_URL =
   'https://raw.githubusercontent.com/Miltt/Intervals-Mobile-Companion/main/public/locales';
 

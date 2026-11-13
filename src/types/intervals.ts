@@ -1,4 +1,18 @@
-export type SportType = 'Run' | 'Ride' | 'Swim' | 'Pilates' | 'Yoga' | 'Strength' | 'Mobility' | 'Note';
+export type SportType =
+  | 'Run'
+  | 'Ride'
+  | 'Swim'
+  | 'Walk'
+  | 'Hike'
+  | 'Rowing'
+  | 'NordicSki'
+  | 'Strength'
+  | 'Mobility'
+  | 'Pilates'
+  | 'Yoga'
+  | 'HIIT'
+  | 'Note'
+  | (string & {});
 
 export type TrainingZone = 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5';
 
@@ -212,9 +226,9 @@ export interface WeekSummary {
 
 export interface SyncState {
   lastSyncedAt: string; // ISO string
-  nextAutoSyncAt: string; // ISO string (lastSyncedAt + 12 hours)
+  nextAutoSyncAt: string; // ISO string
   isSyncing: boolean;
-  mode: 'demo' | 'live';
+  mode: 'live';
   athleteName: string;
   athleteDevice: string;
   syncError: string | null;

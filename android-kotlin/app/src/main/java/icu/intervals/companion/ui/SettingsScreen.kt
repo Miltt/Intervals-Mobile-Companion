@@ -19,16 +19,19 @@ enum class AppThemeMode { SYSTEM, DARK, LIGHT }
 val ALL_CONFIGURABLE_SPORTS = listOf("Run", "Swim", "Strength", "Mobility", "Pilates", "Yoga", "Ride")
 
 data class UserSettingsState(
-    val isLoggedIn: Boolean = true,
-    val athleteName: String = "Intervals.icu Athlete",
-    val language: String = "en", // en, de, ru, fr, it, or any language from public/locales/index.json
-    val autoSyncHours: Int = 12,
-    val themeMode: AppThemeMode = AppThemeMode.DARK,
-    val enabledSports: Set<String> = setOf("Run", "Swim", "Strength", "Mobility"),
-    val useMetricUnits: Boolean = true,
+    val isLoggedIn: Boolean = false,
+    val athleteName: String = "",
+    val language: String = java.util.Locale.getDefault().language.let {
+        if (it in setOf("en", "es", "de", "ru", "fr", "it")) it else "en"
+    },
+    val autoSyncHours: Int = 24,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val enabledSports: Set<String> = ALL_CONFIGURABLE_SPORTS.toSet(),
+    val useMetricUnits: Boolean = java.util.Locale.getDefault().country !in setOf("US", "LR", "MM", "GB"),
     val lookaheadDays: Int = 14,
     val wifiOnlySync: Boolean = false,
-    val morningReminder: Boolean = true
+    val morningReminder: Boolean = true,
+    val morningReminderTime: String = "07:00"
 )
 
 @Composable

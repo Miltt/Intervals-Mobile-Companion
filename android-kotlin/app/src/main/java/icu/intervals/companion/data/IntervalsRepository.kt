@@ -10,8 +10,7 @@ class IntervalsRepository(
     private val apiService: IntervalsApiService
 ) {
     /**
-     * Fetches scheduled running workouts (?resolve=true) and completed running activities.
-     * Strictly ignores non-running sports (Pilates, Yoga, Strength, Mobility, Steps).
+     * Fetches all scheduled workouts (?resolve=true) and completed activities unconditionally.
      */
     suspend fun syncRunningCalendar(
         athleteId: String = "0",
@@ -31,26 +30,25 @@ class IntervalsRepository(
         )
 
         val plannedRuns = rawEvents
-            .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
-                val durationSec = dto.moving_time ?: dto.workout_doc?.duration ?: 3600
-                val distKm = ((dto.distance ?: dto.workout_doc?.distance ?: 10000.0) / 1000.0)
+                val durationSec = dto.moving_time ?: dto.workout_doc?.duration ?: 0
+                val distKm = ((dto.distance ?: dto.workout_doc?.distance ?: 0.0) / 1000.0)
                 val steps = mapResolvedWorkoutSteps(dto.workout_doc?.steps, durationSec)
 
                 PlannedRunWorkout(
                     id = dto.id.toString(),
                     date = dto.start_date_local.take(10),
-                    startTime = dto.start_date_local.drop(11).take(5).ifEmpty { "08:00" },
-                    name = dto.name ?: "Scheduled Run",
+                    startTime = dto.start_date_local.drop(11).take(5),
+                    name = dto.name ?: "Scheduled ${dto.type ?: "Workout"}",
                     durationSec = durationSec,
                     durationLabel = formatDurationCompact(durationSec),
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
-                    load = dto.icu_training_load ?: 50,
-                    intensityPct = dto.icu_intensity?.roundToInt() ?: 75,
+                    load = dto.icu_training_load ?: 0,
+                    intensityPct = dto.icu_intensity?.roundToInt() ?: 0,
                     instructionGroups = listOf(
                         InstructionGroup(
                             repeatCount = null,
-                            bullets = (dto.description ?: "Run by coach pace targets")
+                            bullets = (dto.description ?: "")
                                 .lines()
                                 .map { it.trim() }
                                 .filter { it.isNotEmpty() }
@@ -63,33 +61,32 @@ class IntervalsRepository(
             }
 
         val completedRuns = rawActivities
-            .filter { it.type.equals("Run", ignoreCase = true) }
             .map { dto ->
-                val durationSec = dto.moving_time ?: 3600
-                val distKm = ((dto.distance ?: 10000.0) / 1000.0)
+                val durationSec = dto.moving_time ?: 0
+                val distKm = ((dto.distance ?: 0.0) / 1000.0)
                 val paceSecPerKm = if (dto.average_speed != null && dto.average_speed > 0f) {
                     1000f / dto.average_speed
                 } else {
-                    320f
+                    0f
                 }
 
                 CompletedRunActivity(
                     id = dto.id,
                     date = dto.start_date_local.take(10),
                     startTime = dto.start_date_local.drop(11).take(5),
-                    name = dto.name ?: "Completed Run",
+                    name = dto.name ?: "${dto.type ?: "Completed"} Activity",
                     distanceKm = (distKm * 10.0).roundToInt() / 10.0,
                     movingTimeLabel = formatDurationCompact(durationSec),
-                    paceFormatted = formatPaceMinKm(paceSecPerKm),
-                    gapFormatted = formatPaceMinKm(paceSecPerKm - 2f),
-                    avgHr = dto.average_heartrate ?: 135,
-                    maxHr = dto.max_heartrate ?: 155,
+                    paceFormatted = if (paceSecPerKm > 0f) formatPaceMinKm(paceSecPerKm) else "—",
+                    gapFormatted = "—",
+                    avgHr = dto.average_heartrate ?: 0,
+                    maxHr = dto.max_heartrate ?: 0,
                     normPowerWatts = dto.icu_weighted_avg_watts,
-                    load = dto.icu_training_load ?: 45,
+                    load = dto.icu_training_load ?: 0,
                     compliancePct = dto.icu_workout_compliance,
-                    paceStreamSec = listOf(330f, 324f, 320f, 322f, 318f, 321f, 319f, 322f),
-                    hrStreamBpm = listOf(124, 127, 129, 128, 130, 128, 131, 129),
-                    powerStreamWatts = listOf(275, 281, 284, 280, 285, 282, 286, 281)
+                    paceStreamSec = emptyList(),
+                    hrStreamBpm = emptyList(),
+                    powerStreamWatts = emptyList()
                 )
             }
 

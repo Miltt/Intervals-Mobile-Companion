@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Activity,
   ArrowLeft,
   Bell,
   CalendarRange,
-  Check,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -23,10 +21,8 @@ import {
   User,
   Wifi,
 } from 'lucide-react';
-import { SportType } from '../types/intervals';
 import {
   AppSettings,
-  CONFIGURABLE_SPORT_TYPES,
   ThemeMode,
   UnitSystem,
 } from '../types/settings';
@@ -88,25 +84,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const flashSaved = (msg: string) => {
     setSavedFeedback(msg);
     setTimeout(() => setSavedFeedback(null), 2400);
-  };
-
-  const handleToggleEnabledSport = (sport: SportType) => {
-    const current = settings.enabledSports || ['Run'];
-    const isChecked = current.includes(sport);
-    let next: SportType[];
-
-    if (isChecked) {
-      if (current.length <= 1) {
-        flashSaved('Keep at least one activity type enabled');
-        return;
-      }
-      next = current.filter((s) => s !== sport);
-    } else {
-      next = [...current, sport];
-    }
-
-    onUpdateSettings({ enabledSports: next });
-    flashSaved(`${t(`sport.${sport}`)} ${isChecked ? '−' : '+'}`);
   };
 
   const cardClass = isLight
@@ -674,74 +651,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* SUB-MENU 5: SYNC */}
       {effectiveSubMenu === 'sync' && (
         <div className="space-y-3.5">
-          {/* 5A. Activity Types to Upload & Display in Calendar */}
-          <div className={cardClass}>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-cyan-500" />
-                <span className={labelClass}>{t('settings.sports.title')}</span>
-              </div>
-              <span className="text-[11px] font-mono text-slate-400">
-                {t('settings.sports.enabled_count', {
-                  enabled: settings.enabledSports.length,
-                  total: CONFIGURABLE_SPORT_TYPES.length,
-                })}
-              </span>
-            </div>
-
-            <p className={subTextClass}>{t('settings.sports.desc')}</p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {CONFIGURABLE_SPORT_TYPES.map((item) => {
-                const isChecked = settings.enabledSports.includes(item.sport);
-                return (
-                  <button
-                    key={item.sport}
-                    type="button"
-                    onClick={() => handleToggleEnabledSport(item.sport)}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                      isChecked
-                        ? isLight
-                          ? 'bg-cyan-50/80 border-cyan-500 text-slate-900'
-                          : 'bg-cyan-500/12 border-cyan-500/70 text-slate-100'
-                        : isLight
-                        ? 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
-                        : 'bg-[#10131b] border-slate-800/90 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span
-                        style={{ backgroundColor: item.badgeColor }}
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold truncate">
-                          {t(`sport.${item.sport}`)}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate">
-                          {t(`sport.${item.sport}.desc`)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-colors ${
-                        isChecked
-                          ? 'bg-cyan-500 border-cyan-400 text-slate-950'
-                          : isLight
-                          ? 'bg-white border-slate-300'
-                          : 'bg-[#161b26] border-slate-700'
-                      }`}
-                    >
-                      {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 5B. Auto-Sync Interval + Wi-Fi Only + Incoming Lookahead (7/14/28 Days) + Pace & Distance Units */}
+          {/* Auto-Sync Interval + Wi-Fi Only + Incoming Lookahead (7/14/28 Days) + Pace & Distance Units */}
           <div className={cardClass}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">

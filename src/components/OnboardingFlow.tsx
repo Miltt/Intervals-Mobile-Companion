@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
-  Copy,
   ExternalLink,
   FileText,
   Gauge,
@@ -16,7 +15,12 @@ import {
   ShieldCheck,
   Sun,
 } from 'lucide-react';
-import { AppSettings, ThemeMode, UnitSystem } from '../types/settings';
+import {
+  AppSettings,
+  getSystemDefaultUnits,
+  ThemeMode,
+  UnitSystem,
+} from '../types/settings';
 import { LocaleMeta } from '../i18n/useTranslation';
 
 const PRIVACY_POLICY_REPO_URL =
@@ -54,13 +58,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   );
   const [isOpeningOAuth, setIsOpeningOAuth] = useState<boolean>(false);
   const [oauthUrl, setOauthUrl] = useState<string>('');
-  const [copiedUri, setCopiedUri] = useState<boolean>(false);
   const [oauthNotice, setOauthNotice] = useState<string | null>(null);
-
-  const currentCallbackUri =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/auth/callback`
-      : 'https://ais-dev-5wnbvdgheoghwxovarqosc-930214768256.europe-west2.run.app/auth/callback';
 
   // Keep termsChecked in sync if settings change
   useEffect(() => {
@@ -133,7 +131,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         setIsOpeningOAuth(false);
         setOauthNotice(
           event.data.error ||
-            'OAuth authorization did not complete. Please verify the Redirect URL below is added in Intervals.icu.'
+            'OAuth authorization did not complete. Please try again.'
         );
       }
     };
@@ -174,12 +172,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       setIsOpeningOAuth(false);
       setOauthNotice('Unable to reach server to construct OAuth URL.');
     }
-  };
-
-  const handleCopyRedirectUri = () => {
-    navigator.clipboard?.writeText(currentCallbackUri).catch(() => {});
-    setCopiedUri(true);
-    setTimeout(() => setCopiedUri(false), 2000);
   };
 
   const cardClass = isLight
@@ -510,11 +502,17 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               </p>
             </div>
 
-            {/* 3. Pace & Distance Units Quick-Pick (km vs mi) */}
+            {/* 3. Pace & Distance Units Quick-Pick (km vs mi — defaults to System Settings) */}
             <div className="space-y-2 pt-3 border-t border-slate-800/30">
-              <div className="flex items-center gap-2">
-                <Gauge className="w-4 h-4 text-cyan-500 shrink-0" />
-                <span className={labelClass}>{t('settings.prefs.units')}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Gauge className="w-4 h-4 text-cyan-500 shrink-0" />
+                  <span className={labelClass}>{t('settings.prefs.units')}</span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {t('settings.theme.system')}:{' '}
+                  {getSystemDefaultUnits() === 'imperial' ? 'mi · min/mi' : 'km · min/km'}
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -624,34 +622,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 <span>
                   <strong>ACTIVITY:READ</strong> — {t('onboarding.step3.perm_activity')}
                 </span>
-              </div>
-            </div>
-
-            {/* Active Redirect URL helper */}
-            <div className={`${subCardClass} space-y-1.5 text-xs`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-500">
-                  Active Redirect URL
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyRedirectUri}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-mono flex items-center gap-1 cursor-pointer ${
-                    isLight
-                      ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                  }`}
-                >
-                  {copiedUri ? (
-                    <Check className="w-3 h-3 text-emerald-500" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                  <span>{copiedUri ? 'Copied' : 'Copy'}</span>
-                </button>
-              </div>
-              <div className="font-mono text-[11px] opacity-80 break-all select-all">
-                {currentCallbackUri}
               </div>
             </div>
 

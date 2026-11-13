@@ -29,6 +29,7 @@ object LocalizationManager {
 
     val defaultLanguages = listOf(
         LocaleOption("en", "English", "English", "🇬🇧", "en.json"),
+        LocaleOption("es", "Spanish", "Español", "🇪🇸", "es.json"),
         LocaleOption("de", "German", "Deutsch", "🇩🇪", "de.json"),
         LocaleOption("ru", "Russian", "Русский", "🇷🇺", "ru.json"),
         LocaleOption("fr", "French", "Français", "🇫🇷", "fr.json"),

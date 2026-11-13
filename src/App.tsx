@@ -29,12 +29,15 @@ import {
   AppSettings,
   CONFIGURABLE_SPORT_TYPES,
   DEFAULT_APP_SETTINGS,
+  formatSportLabel,
+  getSportBadgeColor,
 } from './types/settings';
 import {
   buildWeekForOffset,
   formatRelativeSyncTime,
   getMondayOfWeek,
   LiveIntervalsPayload,
+  normalizeSport,
   toLocalIsoDate,
 } from './utils/formatters';
 import { CompletedActivityCard, PlannedWorkoutCard } from './components/CalendarCards';
@@ -53,7 +56,7 @@ import { useLocalization } from './i18n/useTranslation';
 
 const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
 const OAUTH_TOKEN_STORAGE_KEY = 'intervals_icu_oauth_token_v5';
-const SETTINGS_STORAGE_KEY = 'intervals_icu_companion_settings_v4';
+const SETTINGS_STORAGE_KEY = 'intervals_icu_companion_settings_v5';
 const PULL_REFRESH_THRESHOLD = 62;
 
 type NavSection = 'calendar' | 'incoming' | 'settings';
@@ -119,15 +122,7 @@ export default function App() {
       const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const isLegacyMock =
-          parsed.athleteEmail === 'athlete@example.com' ||
-          parsed.athleteName === 'Intervals.icu Athlete';
-
-        const effectiveLoggedIn = hasOAuth
-          ? true
-          : isLegacyMock
-            ? false
-            : Boolean(parsed.isLoggedIn);
+        const effectiveLoggedIn = hasOAuth ? true : Boolean(parsed.isLoggedIn);
 
         return {
           ...DEFAULT_APP_SETTINGS,
@@ -141,20 +136,12 @@ export default function App() {
             : Boolean(parsed.hasCompletedOnboarding),
           athleteName: hasOAuth
             ? oauthData.athleteName || parsed.athleteName || 'Intervals.icu Athlete'
-            : isLegacyMock
-              ? ''
-              : parsed.athleteName || '',
+            : parsed.athleteName || '',
           athleteEmail: hasOAuth
             ? oauthData.athleteId
               ? `ID: ${oauthData.athleteId} (OAuth 2.0)`
               : parsed.athleteEmail || 'OAuth 2.0 Connected'
-            : isLegacyMock
-              ? ''
-              : parsed.athleteEmail || '',
-          enabledSports:
-            Array.isArray(parsed.enabledSports) && parsed.enabledSports.length > 0
-              ? parsed.enabledSports
-              : DEFAULT_APP_SETTINGS.enabledSports,
+            : parsed.athleteEmail || '',
         };
       }
 
@@ -233,14 +220,11 @@ export default function App() {
   const [settingsSubMenu, setSettingsSubMenu] = useState<SettingsSubMenu>(null);
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
 
-  // Active workout type filter inside the bottom-right Filter popup.
-  // Only sports enabled in Settings are visible in the filter UI.
-  const [selectedFilterSports, setSelectedFilterSports] = useState<SportType[]>(
-    () => settings.enabledSports
-  );
+  // Dynamic workout type filter inside the bottom-right Filter popup.
+  // By default excludedFilterSports is empty so 100% of all synced sports are shown unconditionally.
+  const [excludedFilterSports, setExcludedFilterSports] = useState<SportType[]>([]);
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState<boolean>(false);
 
-  // Keep selectedFilterSports synchronized when user checks/unchecks activity types in Settings
   const handleUpdateSettings = useCallback((partial: Partial<AppSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...partial };
@@ -249,25 +233,9 @@ export default function App() {
       } catch {
         // ignore
       }
-      if (partial.enabledSports) {
-        const newlyAdded = partial.enabledSports.filter(
-          (s) => !prev.enabledSports.includes(s)
-        );
-        setSelectedFilterSports((prevFilter) => {
-          const kept = prevFilter.filter((s) => partial.enabledSports!.includes(s));
-          const combined = Array.from(new Set([...kept, ...newlyAdded]));
-          return combined.length > 0 ? combined : partial.enabledSports!;
-        });
-      }
       return next;
     });
   }, []);
-
-  // Effective sports shown on the calendar after applying the bottom-right Filter button
-  const activeSportSet = useMemo(() => {
-    const valid = selectedFilterSports.filter((s) => settings.enabledSports.includes(s));
-    return new Set<SportType>(valid.length > 0 ? valid : settings.enabledSports);
-  }, [selectedFilterSports, settings.enabledSports]);
 
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
   const [syncToast, setSyncToast] = useState<string | null>(null);
@@ -320,7 +288,8 @@ export default function App() {
       // ignore
     }
     const baseTime = lastSyncedAt ? new Date(lastSyncedAt).getTime() : Date.now();
-    const nextAuto = new Date(baseTime + 12 * 60 * 60 * 1000).toISOString();
+    const defaultHours = settings.autoSyncHours || 24;
+    const nextAuto = new Date(baseTime + defaultHours * 60 * 60 * 1000).toISOString();
     return {
       lastSyncedAt,
       nextAutoSyncAt: nextAuto,
@@ -334,18 +303,55 @@ export default function App() {
 
   // Build the currently viewed week (0 = Current Week, -1 = Last Week, +1 = Next Week, etc.)
   const activeWeek: WeekSummary = useMemo(
-    () => buildWeekForOffset(weekOffset, livePayload, settings.enabledSports),
-    [weekOffset, livePayload, settings.enabledSports]
+    () => buildWeekForOffset(weekOffset, livePayload),
+    [weekOffset, livePayload]
   );
 
   // Build multi-week range around current week for Incoming Workouts tab & activity stepping
   const multiWeeksRange: WeekSummary[] = useMemo(() => {
     const list: WeekSummary[] = [];
     for (let offset = -4; offset <= 4; offset++) {
-      list.push(buildWeekForOffset(offset, livePayload, settings.enabledSports));
+      list.push(buildWeekForOffset(offset, livePayload));
     }
     return list;
-  }, [livePayload, settings.enabledSports]);
+  }, [livePayload]);
+
+  // Dynamically discover all sport types actually present in the athlete's synced Intervals.icu account
+  const discoveredSports: SportType[] = useMemo(() => {
+    const found = new Set<SportType>();
+    for (const ev of livePayload.events || []) {
+      const cat = String(ev.category || 'WORKOUT').toUpperCase();
+      if (cat === 'NOTE' || cat === 'HOLIDAY' || cat === 'SICK') continue;
+      const s = normalizeSport(String(ev.type || 'Run'));
+      if (s) found.add(s);
+    }
+    for (const act of livePayload.activities || []) {
+      const s = normalizeSport(String(act.type || 'Run'));
+      if (s) found.add(s);
+    }
+    for (const d of activeWeek.days) {
+      for (const w of d.scheduledWorkouts) found.add(w.sport);
+      for (const a of d.completedActivities) found.add(a.sport);
+    }
+    if (found.size === 0) {
+      return CONFIGURABLE_SPORT_TYPES.map((m) => m.sport);
+    }
+    const knownOrder = CONFIGURABLE_SPORT_TYPES.map((m) => m.sport);
+    return Array.from(found).sort((a, b) => {
+      const idxA = knownOrder.indexOf(a);
+      const idxB = knownOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return String(a).localeCompare(String(b));
+    });
+  }, [livePayload.events, livePayload.activities, activeWeek.days]);
+
+  // Effective sports shown on the calendar after applying the bottom-right Filter button
+  const activeSportSet = useMemo(() => {
+    const enabled = discoveredSports.filter((s) => !excludedFilterSports.includes(s));
+    return new Set<SportType>(enabled.length > 0 ? enabled : discoveredSports);
+  }, [discoveredSports, excludedFilterSports]);
 
   const performSync = useCallback(
     async (isManualForceCollect: boolean, explicitToken?: string) => {
@@ -392,13 +398,12 @@ export default function App() {
           body: JSON.stringify({
             oldest: toLocalIsoDate(oldestDate),
             newest: toLocalIsoDate(newestDate),
-            enabledSports: settings.enabledSports,
           }),
         });
 
         const data = await response.json().catch(() => ({}));
         const nowIso = new Date().toISOString();
-        const intervalMs = autoSyncIntervalMs || 12 * 60 * 60 * 1000;
+        const intervalMs = autoSyncIntervalMs || 24 * 60 * 60 * 1000;
         const nextIso = new Date(Date.now() + intervalMs).toISOString();
 
         if (response.ok && data.mode === 'live') {
@@ -462,7 +467,7 @@ export default function App() {
           }
         }
       } catch {
-        const intervalMs = autoSyncIntervalMs || 12 * 60 * 60 * 1000;
+        const intervalMs = autoSyncIntervalMs || 24 * 60 * 60 * 1000;
         const nextIso = new Date(Date.now() + intervalMs).toISOString();
         setSyncState((prev) => ({
           ...prev,
@@ -474,7 +479,7 @@ export default function App() {
         }
       }
     },
-    [settings.lookaheadDays, settings.enabledSports, autoSyncIntervalMs, handleUpdateSettings]
+    [settings.lookaheadDays, autoSyncIntervalMs, handleUpdateSettings]
   );
 
   // Listen for OAuth 2.0 Web Browser Login popup completion (Trigger #1: First Login)
@@ -526,8 +531,8 @@ export default function App() {
   }, [syncToast]);
 
   const syncTiming = useMemo(
-    () => formatRelativeSyncTime(syncState.lastSyncedAt),
-    [syncState.lastSyncedAt]
+    () => formatRelativeSyncTime(syncState.lastSyncedAt, settings.autoSyncHours),
+    [syncState.lastSyncedAt, settings.autoSyncHours]
   );
 
   const todayIso = useMemo(() => toLocalIsoDate(new Date()), []);
@@ -768,14 +773,14 @@ export default function App() {
   };
 
   const handleToggleFilterSport = (sport: SportType) => {
-    setSelectedFilterSports((prev) => {
-      const validPrev = prev.filter((s) => settings.enabledSports.includes(s));
-      const exists = validPrev.includes(sport);
-      if (exists) {
-        if (validPrev.length <= 1) return validPrev; // Keep at least 1 checked
-        return validPrev.filter((s) => s !== sport);
+    setExcludedFilterSports((prev) => {
+      const currentlyActive = discoveredSports.filter((s) => !prev.includes(s));
+      const isCurrentlyChecked = currentlyActive.includes(sport);
+      if (isCurrentlyChecked) {
+        if (currentlyActive.length <= 1) return prev; // Keep at least 1 checked
+        return [...prev, sport];
       }
-      return [...validPrev, sport];
+      return prev.filter((s) => s !== sport);
     });
   };
 
@@ -793,17 +798,19 @@ export default function App() {
     return `${km} km`;
   };
 
-  // Only show workout types in the bottom-right Filter popup that the user checked in Settings
+  // Show all sport types discovered in the user's Intervals.icu account inside the bottom-right Filter popup
   const availableFilterSportOptions = useMemo(
     () =>
-      CONFIGURABLE_SPORT_TYPES.filter((meta) =>
-        settings.enabledSports.includes(meta.sport)
-      ),
-    [settings.enabledSports]
+      discoveredSports.map((sport) => ({
+        sport,
+        label: formatSportLabel(sport, t),
+        badgeColor: getSportBadgeColor(sport),
+      })),
+    [discoveredSports, t]
   );
 
   const hasCustomFilterActive =
-    feedFilter !== 'all' || activeSportSet.size < settings.enabledSports.length;
+    feedFilter !== 'all' || activeSportSet.size < discoveredSports.length;
 
   return (
     <AndroidEmulatorFrame
@@ -1144,7 +1151,7 @@ export default function App() {
                     <p className="text-xs text-slate-400 mt-0.5">
                       {t('incoming.subtitle', {
                         sports: Array.from(activeSportSet)
-                          .map((s) => t(`sport.${s}`))
+                          .map((s) => formatSportLabel(s, t))
                           .join(', '),
                       })}
                     </p>
@@ -1347,7 +1354,7 @@ export default function App() {
                           : t('calendar.status.done')}{' '}
                         ·{' '}
                         {Array.from(activeSportSet)
-                          .map((s) => t(`sport.${s}`))
+                          .map((s) => formatSportLabel(s, t))
                           .join(', ')}
                       </div>
                     </div>
@@ -1691,7 +1698,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 2. Workout Types Filter (Only shows types checked in Settings!) */}
+            {/* 2. Dynamic Workout Types Filter (Populated from all sports in the athlete's account) */}
             <div className="pt-3.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
@@ -1701,7 +1708,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setFeedFilter('all');
-                    setSelectedFilterSports(settings.enabledSports);
+                    setExcludedFilterSports([]);
                   }}
                   className="text-[11px] font-semibold text-indigo-400 hover:underline cursor-pointer"
                 >
@@ -1709,7 +1716,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-0.5">
                 {availableFilterSportOptions.map((item) => {
                   const isChecked = activeSportSet.has(item.sport);
                   return (
@@ -1735,7 +1742,7 @@ export default function App() {
                             isLight && isChecked ? 'text-slate-900' : ''
                           }`}
                         >
-                          {t(`sport.${item.sport}`)}
+                          {item.label}
                         </span>
                       </div>
                       <div

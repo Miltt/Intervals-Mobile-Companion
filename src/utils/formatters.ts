@@ -54,7 +54,10 @@ export function formatPaceShort(secPerKm: number): string {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-export function formatRelativeSyncTime(isoString: string): {
+export function formatRelativeSyncTime(
+  isoString: string,
+  intervalHours = 24
+): {
   lastSyncLabel: string;
   nextSyncLabel: string;
   isStale12h: boolean;
@@ -69,7 +72,7 @@ export function formatRelativeSyncTime(isoString: string): {
   const syncedMs = new Date(isoString).getTime();
   const nowMs = Date.now();
   const diffMin = Math.max(0, Math.floor((nowMs - syncedMs) / 60000));
-  const twelveHoursMin = 12 * 60;
+  const targetIntervalMin = Math.max(1, intervalHours) * 60;
 
   let lastSyncLabel = 'Just now';
   if (diffMin >= 60) {
@@ -80,11 +83,13 @@ export function formatRelativeSyncTime(isoString: string): {
     lastSyncLabel = `${diffMin}m ago`;
   }
 
-  const remainingMin = Math.max(0, twelveHoursMin - diffMin);
+  const remainingMin = Math.max(0, targetIntervalMin - diffMin);
   const remH = Math.floor(remainingMin / 60);
   const remM = remainingMin % 60;
   const nextSyncLabel =
-    remainingMin === 0
+    intervalHours === 0
+      ? 'Manual'
+      : remainingMin === 0
       ? 'Due now'
       : remH > 0
       ? `in ${remH}h ${remM}m`
@@ -93,7 +98,7 @@ export function formatRelativeSyncTime(isoString: string): {
   return {
     lastSyncLabel,
     nextSyncLabel,
-    isStale12h: diffMin >= twelveHoursMin,
+    isStale12h: diffMin >= targetIntervalMin,
   };
 }
 
@@ -120,17 +125,53 @@ export function getIsoWeekNumber(date: Date): number {
   return Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
-function normalizeSport(rawType?: string): SportType | null {
+export function normalizeSport(rawType?: string): SportType | null {
   if (!rawType) return null;
-  const lower = rawType.toLowerCase();
-  if (lower.includes('run') || lower.includes('trail') || lower.includes('virtualrun')) return 'Run';
+  const trimmed = rawType.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('run') || lower.includes('trailrun') || lower.includes('virtualrun') || lower === 'treadmill') return 'Run';
   if (lower.includes('swim')) return 'Swim';
-  if (lower.includes('ride') || lower.includes('cycling') || lower.includes('bike') || lower.includes('virtualride')) return 'Ride';
+  if (
+    lower.includes('ride') ||
+    lower.includes('cycling') ||
+    lower.includes('bike') ||
+    lower.includes('velomobile') ||
+    lower.includes('handcycle')
+  ) {
+    return 'Ride';
+  }
+  if (lower.includes('walk')) return 'Walk';
+  if (lower.includes('hike') || lower.includes('trek')) return 'Hike';
+  if (
+    lower.includes('row') ||
+    lower.includes('kayak') ||
+    lower.includes('canoe') ||
+    lower.includes('paddl') ||
+    lower === 'sup'
+  ) {
+    return 'Rowing';
+  }
+  if (lower.includes('ski') || lower.includes('snowboard') || lower.includes('snowshoe')) {
+    return 'NordicSki';
+  }
   if (lower.includes('pilates')) return 'Pilates';
   if (lower.includes('yoga')) return 'Yoga';
-  if (lower.includes('weight') || lower.includes('strength') || lower.includes('gym') || lower.includes('workout')) return 'Strength';
+  if (lower.includes('weight') || lower.includes('strength') || lower.includes('crossfit') || lower.includes('gym')) {
+    return 'Strength';
+  }
   if (lower.includes('mobility') || lower.includes('stretch')) return 'Mobility';
-  return 'Run';
+  if (
+    lower.includes('hiit') ||
+    lower.includes('elliptical') ||
+    lower.includes('stair') ||
+    lower.includes('cardio') ||
+    lower === 'workout'
+  ) {
+    return 'HIIT';
+  }
+  // Preserve any other sport returned by Intervals.icu (e.g., Skating, Climbing, Tennis, Soccer, Golf)
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
 function zoneColor(zone: TrainingZone): string {
@@ -387,8 +428,7 @@ function parseWorkoutDocSteps(
  */
 export function buildWeekForOffset(
   weekOffset: number,
-  payload: LiveIntervalsPayload,
-  enabledSports: SportType[] = ['Run', 'Swim', 'Strength', 'Mobility', 'Pilates', 'Yoga', 'Ride']
+  payload: LiveIntervalsPayload
 ): WeekSummary {
   const now = new Date();
   const todayIso = toLocalIsoDate(now);
@@ -431,7 +471,7 @@ export function buildWeekForOffset(
       if (category === 'NOTE' || category === 'HOLIDAY' || category === 'SICK') continue;
 
       const sport = normalizeSport(String(ev.type || 'Run'));
-      if (!sport || !enabledSports.includes(sport)) continue;
+      if (!sport) continue;
 
       const startDateLocal = String(ev.start_date_local || '');
       const dateKey = startDateLocal.slice(0, 10);
@@ -480,7 +520,7 @@ export function buildWeekForOffset(
   if (Array.isArray(payload.activities)) {
     for (const act of payload.activities) {
       const sport = normalizeSport(String(act.type || 'Run'));
-      if (!sport || !enabledSports.includes(sport)) continue;
+      if (!sport) continue;
 
       const startDateLocal = String(act.start_date_local || '');
       const dateKey = startDateLocal.slice(0, 10);
@@ -525,7 +565,9 @@ export function buildWeekForOffset(
         movingTimeSec,
         movingTimeLabel: formatDurationCompact(movingTimeSec),
         paceFormatted:
-          distanceKm && sport === 'Run' && paceSec > 0
+          distanceKm &&
+          ['Run', 'Walk', 'Hike', 'NordicSki', 'Rowing'].includes(sport) &&
+          paceSec > 0
             ? formatPaceSecPerKm(paceSec)
             : undefined,
         gapFormatted:

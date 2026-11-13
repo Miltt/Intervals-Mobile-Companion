@@ -68,7 +68,7 @@ async function startServer() {
       accessToken: oauthSession?.accessToken || null,
       athleteName: oauthSession?.athleteName || null,
       athleteId: oauthSession?.athleteId || '0',
-      syncPolicyHours: 12,
+      syncPolicyHours: 24,
     });
   });
 
