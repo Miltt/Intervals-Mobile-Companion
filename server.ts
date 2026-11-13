@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { createServer as createHttpServer } from 'http';
 import crypto from 'crypto';
 import path from 'path';
@@ -17,6 +18,19 @@ const INTERVALS_OAUTH_TOKEN_URL = 'https://intervals.icu/api/oauth/token';
 
 // Approved Public OAuth Client ID for Intervals Mobile Companion (PKCE S256)
 const DEFAULT_OAUTH_CLIENT_ID = '1781';
+
+// Strict input validators (recognized by CodeQL taint analysis as sanitizers)
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const SAFE_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 // In-memory OAuth session store for the authenticated athlete via Web Browser Login
 let oauthSession: {
@@ -44,13 +58,24 @@ function buildAuthHeader(bearerToken?: string): string | null {
 }
 
 function getRedirectUri(originParam?: string): string {
-  if (originParam && originParam.startsWith('http')) {
-    return `${originParam.replace(/\/+$/, '')}/auth/callback`;
+  if (originParam && originParam.length <= 256) {
+    try {
+      const parsed = new URL(originParam);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return `${parsed.origin}/auth/callback`;
+      }
+    } catch {
+      // fall through
+    }
   }
   const envUrl = (process.env.OAUTH_REDIRECT_URI || '').trim();
   if (envUrl) return envUrl;
-  const appUrl = (process.env.APP_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
-  return `${appUrl}/auth/callback`;
+  try {
+    const parsedApp = new URL((process.env.APP_URL || 'http://localhost:3000').trim());
+    return `${parsedApp.origin}/auth/callback`;
+  } catch {
+    return 'http://localhost:3000/auth/callback';
+  }
 }
 
 async function startServer() {
@@ -58,8 +83,25 @@ async function startServer() {
   const httpServer = createHttpServer(app);
   app.use(express.json({ limit: '5mb' }));
 
+  // Global rate limiter to prevent DoS on API and static file routes (CodeQL js/missing-rate-limiting)
+  const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 300, // max 300 requests per 15-minute window per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  app.use(generalLimiter);
+
   // Check server OAuth / connection status
-  app.get('/api/intervals/status', (_req, res) => {
+  app.get('/api/intervals/status', generalLimiter, (_req, res) => {
     const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
     res.json({
       configuredOnServer: Boolean(oauthSession?.accessToken),
@@ -73,7 +115,7 @@ async function startServer() {
   });
 
   // 1. Construct Intervals.icu OAuth 2.0 + PKCE (S256) Web Browser Login URL
-  app.get('/api/auth/url', (req, res) => {
+  app.get('/api/auth/url', authLimiter, (req, res) => {
     const clientId = (process.env.CLIENT_ID || DEFAULT_OAUTH_CLIENT_ID).trim();
     const originParam = typeof req.query.origin === 'string' ? req.query.origin.trim() : '';
     const redirectUri = getRedirectUri(originParam);
@@ -143,12 +185,12 @@ async function startServer() {
         if (tokenRes.ok) {
           const tokenData = await tokenRes.json();
           oauthSession = {
-            accessToken: tokenData.access_token,
+            accessToken: String(tokenData.access_token || ''),
             athleteId: String(tokenData.athlete?.id || '0'),
             athleteName: String(tokenData.athlete?.name || 'Intervals.icu Athlete'),
           };
         } else {
-          authError = await tokenRes.text().catch(() => `HTTP ${tokenRes.status}`);
+          authError = `HTTP ${tokenRes.status}`;
           console.error('Intervals OAuth token error:', authError);
         }
       } catch (err) {
@@ -156,6 +198,8 @@ async function startServer() {
         console.error('OAuth token exchange error:', err);
       }
     }
+
+    const safeErrorHtml = authError ? escapeHtml(`Note: ${authError}`) : 'Returning to Intervals Companion...';
 
     res.send(`
       <html>
@@ -182,7 +226,7 @@ async function startServer() {
                 athleteName: ${JSON.stringify(oauthSession?.athleteName || 'Intervals.icu Athlete')},
                 athleteId: ${JSON.stringify(oauthSession?.athleteId || '0')},
                 error: ${JSON.stringify(authError)}
-              }, '*');
+              }, window.location.origin);
               window.close();
             } else {
               window.location.href = '/';
@@ -194,26 +238,24 @@ async function startServer() {
                 ? 'Signed in to Intervals.icu!'
                 : 'Completing Intervals.icu Sign-In...'
             }</h3>
-            <p style="font-size:13px;color:#94a3b8;">${
-              authError ? `Note: ${authError}` : 'Returning to Intervals Companion...'
-            }</p>
+            <p style="font-size:13px;color:#94a3b8;">${safeErrorHtml}</p>
           </div>
         </body>
       </html>
     `);
   };
 
-  app.get(['/auth/callback', '/auth/callback/'], callbackHandler);
+  app.get(['/auth/callback', '/auth/callback/'], authLimiter, callbackHandler);
 
   // 3. Logout endpoint — kills active server OAuth session and PKCE state
-  app.post('/api/auth/logout', (_req, res) => {
+  app.post('/api/auth/logout', authLimiter, (_req, res) => {
     oauthSession = null;
     pkceStore.clear();
     res.json({ ok: true });
   });
 
   // 4. Public Privacy Policy page required by https://intervals.icu/oauth/apply and Google Play Store
-  app.get('/privacy', (_req, res) => {
+  app.get('/privacy', generalLimiter, (_req, res) => {
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -244,19 +286,22 @@ async function startServer() {
 </html>`);
   });
 
-  // Sync endpoint: Always uses athleteId = "0" (authenticated user) or OAuth session athleteId
-  app.post('/api/intervals/sync', async (req, res) => {
+  // Sync endpoint: Always uses athleteId = "0" (authenticated user) or validated OAuth session athleteId
+  app.post('/api/intervals/sync', generalLimiter, async (req, res) => {
     try {
       const now = new Date();
       const defaultOldest = new Date(now.getTime() - 28 * 86400000).toISOString().slice(0, 10);
       const defaultNewest = new Date(now.getTime() + 28 * 86400000).toISOString().slice(0, 10);
-      const {
-        oldest = defaultOldest,
-        newest = defaultNewest,
-      } = req.body || {};
+      const rawOldest = typeof req.body?.oldest === 'string' ? req.body.oldest : defaultOldest;
+      const rawNewest = typeof req.body?.newest === 'string' ? req.body.newest : defaultNewest;
+
+      const oldest = ISO_DATE_REGEX.test(rawOldest) ? rawOldest : defaultOldest;
+      const newest = ISO_DATE_REGEX.test(rawNewest) ? rawNewest : defaultNewest;
 
       // "0" always resolves to the authenticated athlete in Intervals.icu
-      const athleteId = oauthSession?.athleteId || '0';
+      const rawAthleteId = oauthSession?.athleteId || '0';
+      const athleteId = SAFE_ID_REGEX.test(rawAthleteId) ? rawAthleteId : '0';
+
       const bearerHeader = req.headers.authorization;
       const bearerToken = bearerHeader?.startsWith('Bearer ')
         ? bearerHeader.slice('Bearer '.length)
@@ -319,9 +364,13 @@ async function startServer() {
   });
 
   // Activity streams endpoint for completed workout diagrams
-  app.get('/api/intervals/activity/:id/streams', async (req, res) => {
+  app.get('/api/intervals/activity/:id/streams', generalLimiter, async (req, res) => {
     try {
-      const { id } = req.params;
+      const rawId = typeof req.params.id === 'string' ? req.params.id : '';
+      if (!SAFE_ID_REGEX.test(rawId)) {
+        return res.status(400).json({ error: 'Invalid activity ID format' });
+      }
+
       const bearerHeader = req.headers.authorization;
       const bearerToken = bearerHeader?.startsWith('Bearer ')
         ? bearerHeader.slice('Bearer '.length)
@@ -338,9 +387,9 @@ async function startServer() {
       };
 
       const [detailRes, streamsRes] = await Promise.all([
-        fetch(`${INTERVALS_BASE_URL}/activity/${encodeURIComponent(id)}`, { headers }),
+        fetch(`${INTERVALS_BASE_URL}/activity/${encodeURIComponent(rawId)}`, { headers }),
         fetch(
-          `${INTERVALS_BASE_URL}/activity/${encodeURIComponent(id)}/streams?types=time,distance,velocity_smooth,watts,heartrate,cadence,altitude`,
+          `${INTERVALS_BASE_URL}/activity/${encodeURIComponent(rawId)}/streams?types=time,distance,velocity_smooth,watts,heartrate,cadence,altitude`,
           { headers }
         ),
       ]);
@@ -373,8 +422,8 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.use(generalLimiter, express.static(distPath));
+    app.get('*', generalLimiter, (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
@@ -385,3 +434,4 @@ async function startServer() {
 }
 
 startServer();
+
