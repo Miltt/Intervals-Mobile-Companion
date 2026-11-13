@@ -9,6 +9,10 @@ import {
 } from 'lucide-react';
 import { ActivityStreamPoint, CompletedActivity, SportType, TrainingZone } from '../types/intervals';
 import { formatPaceShort, formatSecondsToClock } from '../utils/formatters';
+import {
+  fetchActivityStreamsDirect,
+  isStandaloneCapacitorApk,
+} from '../utils/intervalsClient';
 
 interface CompletedActivityDetailProps {
   activity: CompletedActivity;
@@ -100,18 +104,29 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           // ignore
         }
 
-        const headers: Record<string, string> = {};
-        if (accessToken) {
-          headers.Authorization = `Bearer ${accessToken}`;
+        let rawStreams: Array<{ type: string; data: unknown[] }> = [];
+
+        if (isStandaloneCapacitorApk() && accessToken) {
+          rawStreams = await fetchActivityStreamsDirect(accessToken, activity.id);
+        } else {
+          const headers: Record<string, string> = {};
+          if (accessToken) {
+            headers.Authorization = `Bearer ${accessToken}`;
+          }
+          const res = await fetch(
+            `/api/intervals/activity/${encodeURIComponent(activity.id)}/streams`,
+            { headers }
+          ).catch(() => null);
+          if (res && res.ok) {
+            const data = await res.json().catch(() => null);
+            if (Array.isArray(data?.streams)) {
+              rawStreams = data.streams;
+            }
+          } else if (accessToken) {
+            rawStreams = await fetchActivityStreamsDirect(accessToken, activity.id);
+          }
         }
 
-        const res = await fetch(
-          `/api/intervals/activity/${encodeURIComponent(activity.id)}/streams`,
-          { headers }
-        );
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const rawStreams = Array.isArray(data?.streams) ? data.streams : [];
         if (rawStreams.length === 0 || cancelled) return;
 
         const byType: Record<string, number[]> = {};

@@ -7,6 +7,10 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import {
+  createNativePkceAuthorizeUrl,
+  isStandaloneCapacitorApk,
+} from '../utils/intervalsClient';
 
 interface IntervalsWebLoginSheetProps {
   defaultEmail?: string;
@@ -25,9 +29,20 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
   const [oauthUrl, setOauthUrl] = useState<string>('');
   const [oauthNotice, setOauthNotice] = useState<string | null>(null);
 
-  // Pre-fetch the PKCE authorization URL for the current origin
+  // Pre-fetch the PKCE authorization URL for the current origin or native APK
   useEffect(() => {
     let cancelled = false;
+    if (isStandaloneCapacitorApk()) {
+      createNativePkceAuthorizeUrl()
+        .then((url) => {
+          if (!cancelled && url) setOauthUrl(url);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -76,9 +91,9 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, [onSuccessLogin]);
 
-  // Also poll /api/intervals/status while waiting in case cross-origin opener was stripped
+  // Also poll /api/intervals/status while waiting in web mode
   useEffect(() => {
-    if (!isOpening) return;
+    if (!isOpening || isStandaloneCapacitorApk()) return;
     const timer = setInterval(async () => {
       try {
         const res = await fetch('/api/intervals/status');
@@ -113,6 +128,13 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
     try {
       setIsOpening(true);
       setOauthNotice(null);
+
+      if (isStandaloneCapacitorApk()) {
+        const nativeUrl = oauthUrl || (await createNativePkceAuthorizeUrl());
+        window.location.href = nativeUrl;
+        return;
+      }
+
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
       if (oauthUrl) {

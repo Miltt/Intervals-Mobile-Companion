@@ -22,6 +22,10 @@ import {
   UnitSystem,
 } from '../types/settings';
 import { LocaleMeta } from '../i18n/useTranslation';
+import {
+  createNativePkceAuthorizeUrl,
+  isStandaloneCapacitorApk,
+} from '../utils/intervalsClient';
 
 const PRIVACY_POLICY_REPO_URL =
   'https://github.com/Miltt/Intervals-Mobile-Companion/blob/main/PRIVACY.md';
@@ -76,6 +80,17 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   useEffect(() => {
     if (step !== 3) return;
     let cancelled = false;
+    if (isStandaloneCapacitorApk()) {
+      createNativePkceAuthorizeUrl()
+        .then((url) => {
+          if (!cancelled && url) setOauthUrl(url);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     fetch(`/api/auth/url?origin=${encodeURIComponent(origin)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -90,9 +105,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     };
   }, [step]);
 
-  // Poll /api/intervals/status while waiting on Step 3 in case cross-origin opener was stripped
+  // Poll /api/intervals/status while waiting on Step 3 in web mode
   useEffect(() => {
-    if (step !== 3 || !isOpeningOAuth) return;
+    if (step !== 3 || !isOpeningOAuth || isStandaloneCapacitorApk()) return;
     const timer = setInterval(async () => {
       try {
         const res = await fetch('/api/intervals/status');
@@ -143,6 +158,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
     try {
       setIsOpeningOAuth(true);
       setOauthNotice(null);
+
+      // Native Android APK mode: use client-side PKCE with intervalscompanion://oauth/callback
+      if (isStandaloneCapacitorApk()) {
+        const nativeUrl = oauthUrl || (await createNativePkceAuthorizeUrl());
+        window.location.href = nativeUrl;
+        return;
+      }
+
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
       if (oauthUrl) {

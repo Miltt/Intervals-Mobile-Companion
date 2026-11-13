@@ -53,6 +53,11 @@ import { SettingsScreen, SettingsSubMenu } from './components/SettingsScreen';
 import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
 import { OnboardingFlow, OnboardingStep } from './components/OnboardingFlow';
 import { useLocalization } from './i18n/useTranslation';
+import {
+  exchangeNativePkceCode,
+  isStandaloneCapacitorApk,
+  syncIntervalsDirect,
+} from './utils/intervalsClient';
 
 const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
 const OAUTH_TOKEN_STORAGE_KEY = 'intervals_icu_oauth_token_v5';
@@ -241,7 +246,9 @@ export default function App() {
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [showKotlinModal, setShowKotlinModal] = useState<boolean>(false);
   const [showWebLoginSheet, setShowWebLoginSheet] = useState<boolean>(false);
-  const [isEmulatorActive, setIsEmulatorActive] = useState<boolean>(true);
+  const [isEmulatorActive, setIsEmulatorActive] = useState<boolean>(
+    () => !isStandaloneCapacitorApk()
+  );
   const [deviceMode, setDeviceMode] = useState<DeviceViewportMode>(() =>
     detectViewportDeviceMode()
   );
@@ -389,24 +396,50 @@ export default function App() {
         const lookahead = Math.max(14, settings.lookaheadDays || 14);
         const newestDate = new Date(currentMonday.getTime() + (lookahead + 14) * 86400000);
 
-        const response = await fetch('/api/intervals/sync', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${storedToken}`,
-          },
-          body: JSON.stringify({
-            oldest: toLocalIsoDate(oldestDate),
-            newest: toLocalIsoDate(newestDate),
-          }),
-        });
-
-        const data = await response.json().catch(() => ({}));
+        const oldestIso = toLocalIsoDate(oldestDate);
+        const newestIso = toLocalIsoDate(newestDate);
         const nowIso = new Date().toISOString();
         const intervalMs = autoSyncIntervalMs || 24 * 60 * 60 * 1000;
         const nextIso = new Date(Date.now() + intervalMs).toISOString();
 
-        if (response.ok && data.mode === 'live') {
+        let liveResult: LiveIntervalsPayload | null = null;
+        let syncErrorMsg = '';
+
+        if (isStandaloneCapacitorApk()) {
+          liveResult = await syncIntervalsDirect(storedToken, oldestIso, newestIso);
+        } else {
+          const response = await fetch('/api/intervals/sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${storedToken}`,
+            },
+            body: JSON.stringify({
+              oldest: oldestIso,
+              newest: newestIso,
+            }),
+          }).catch(() => null);
+
+          if (response && response.ok) {
+            const data = await response.json().catch(() => ({}));
+            if (data.mode === 'live') {
+              liveResult = {
+                athlete: data.athlete,
+                events: data.events,
+                activities: data.activities,
+                wellness: data.wellness,
+              };
+            } else if (data.error) {
+              syncErrorMsg = String(data.error);
+            }
+          } else {
+            // Fallback to direct Intervals.icu REST API if backend proxy is unavailable
+            liveResult = await syncIntervalsDirect(storedToken, oldestIso, newestIso);
+          }
+        }
+
+        if (liveResult) {
+          const data = liveResult;
           setLivePayload((prev) => {
             const merged = mergePayloads(prev, {
               athlete: data.athlete,
@@ -460,8 +493,8 @@ export default function App() {
           }));
           if (isManualForceCollect) {
             setSyncToast(
-              data.error
-                ? `Sync notice: ${data.error}`
+              syncErrorMsg
+                ? `Sync notice: ${syncErrorMsg}`
                 : 'Sign in with Intervals.icu in Settings → Account to sync live workouts.'
             );
           }
@@ -482,46 +515,85 @@ export default function App() {
     [settings.lookaheadDays, autoSyncIntervalMs, handleUpdateSettings]
   );
 
-  // Listen for OAuth 2.0 Web Browser Login popup completion (Trigger #1: First Login)
+  // Listen for OAuth 2.0 Web Browser Login popup completion OR Android APK Deep-Link (`intervalscompanion://oauth/callback?code=...`)
   useEffect(() => {
+    const completeOAuthLogin = (name: string, athleteId: string, accessToken: string) => {
+      if (!accessToken) return;
+      try {
+        localStorage.setItem(
+          OAUTH_TOKEN_STORAGE_KEY,
+          JSON.stringify({
+            accessToken,
+            athleteName: name,
+            athleteId,
+            savedAt: new Date().toISOString(),
+          })
+        );
+      } catch {
+        // ignore
+      }
+
+      handleUpdateSettings({
+        isLoggedIn: true,
+        hasAcceptedTerms: true,
+        hasCompletedOnboarding: true,
+        athleteName: name,
+        athleteEmail: `Athlete #${athleteId}`,
+      });
+      setShowWebLoginSheet(false);
+      setActiveSection('calendar');
+      setWeekOffset(0);
+      setSelectedDayDate(toLocalIsoDate(new Date()));
+      setSyncToast(`Signed in as ${name} via Intervals.icu OAuth`);
+      performSync(true, accessToken);
+    };
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const name = event.data?.athleteName || 'Intervals.icu Athlete';
         const athleteId = event.data?.athleteId || '0';
         const accessToken = event.data?.accessToken || '';
-        if (!accessToken) return;
-
-        try {
-          localStorage.setItem(
-            OAUTH_TOKEN_STORAGE_KEY,
-            JSON.stringify({
-              accessToken,
-              athleteName: name,
-              athleteId,
-              savedAt: new Date().toISOString(),
-            })
-          );
-        } catch {
-          // ignore
-        }
-
-        handleUpdateSettings({
-          isLoggedIn: true,
-          hasAcceptedTerms: true,
-          hasCompletedOnboarding: true,
-          athleteName: name,
-          athleteEmail: `Athlete #${athleteId}`,
-        });
-        setShowWebLoginSheet(false);
-        setActiveSection('calendar');
-        setWeekOffset(0);
-        setSelectedDayDate(toLocalIsoDate(new Date()));
-        setSyncToast(`Signed in as ${name} via Intervals.icu OAuth`);
-        performSync(true, accessToken);
+        completeOAuthLogin(name, athleteId, accessToken);
       }
     };
+
+    const handleDeepLinkCode = async (code: string) => {
+      try {
+        const exchanged = await exchangeNativePkceCode(code);
+        // Clean `?code=` from URL bar if present
+        if (typeof window !== 'undefined' && window.history?.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        completeOAuthLogin(exchanged.athleteName, exchanged.athleteId, exchanged.accessToken);
+      } catch (err) {
+        setSyncToast(
+          err instanceof Error ? err.message : 'OAuth token exchange failed.'
+        );
+      }
+    };
+
+    // Check if the page/WebView was launched with ?code=...
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlCode = searchParams.get('code');
+      if (urlCode) {
+        handleDeepLinkCode(urlCode);
+      }
+    }
+
+    const handleNativeOAuthEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ code?: string }>;
+      if (custom.detail?.code) {
+        handleDeepLinkCode(custom.detail.code);
+      }
+    };
+
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener('native-oauth-callback', handleNativeOAuthEvent);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('native-oauth-callback', handleNativeOAuthEvent);
+    };
   }, [handleUpdateSettings, performSync]);
 
   useEffect(() => {

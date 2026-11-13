@@ -42,6 +42,7 @@ interface AndroidEmulatorFrameProps {
 
 export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
   children,
+  isEmulatorActive,
   deviceMode,
   onChangeDeviceMode,
   onBackGesture,
@@ -77,6 +78,15 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
     const id = setInterval(updateClock, 15000);
     return () => clearInterval(id);
   }, []);
+
+  // When running inside the compiled Android APK (or standalone mobile mode), render full-screen natively without any emulator bezel
+  if (!isEmulatorActive) {
+    return (
+      <div className="h-dvh w-screen overflow-hidden flex flex-col bg-[#0f1117] select-none">
+        {children}
+      </div>
+    );
+  }
 
   const handleCopyFile = async (file: KotlinSourceFile) => {
     try {
@@ -135,7 +145,7 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
               </span>
             </div>
             <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-              Package: icu.intervals.companion · WorkManager 12h Sync · Last sync: {lastSyncLabel}
+              Package: icu.intervals.companion · WorkManager 24h Sync · Last sync: {lastSyncLabel}
             </div>
           </div>
         </div>
