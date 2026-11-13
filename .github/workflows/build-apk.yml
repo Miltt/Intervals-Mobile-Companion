@@ -117,12 +117,13 @@ jobs:
               f.write(content)
           PYEOF
 
-          # 3. Copy official Intervals Companion icon into mipmap folders
-          for dir in android/app/src/main/res/mipmap-*; do
+          # 3. Copy official Intervals Companion icon ONLY into density-specific mipmap folders (excluding mipmap-anydpi-v26 which holds XML descriptors)
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            dir="android/app/src/main/res/mipmap-${density}"
             if [ -d "$dir" ]; then
-              cp public/pwa-512x512.png "$dir/ic_launcher.png" || true
-              cp public/pwa-512x512.png "$dir/ic_launcher_round.png" || true
-              cp public/pwa-512x512.png "$dir/ic_launcher_foreground.png" || true
+              cp public/pwa-512x512.png "$dir/ic_launcher.png"
+              cp public/pwa-512x512.png "$dir/ic_launcher_round.png"
+              cp public/pwa-512x512.png "$dir/ic_launcher_foreground.png"
             fi
           done
 
