@@ -1,85 +1,77 @@
-# Intervals Companion (Android Kotlin + Jetpack Compose)
+# Intervals Companion
 
-A clean, lightweight Android companion app for **[Intervals.icu](https://intervals.icu)** focused on viewing incoming coach-prescribed workouts, interactive pace-time step diagrams, and completed activities.
+A fast, lightweight mobile & tablet companion app for **[Intervals.icu](https://intervals.icu)** built for viewing incoming coach-prescribed workouts, interactive running pace-time step diagrams, and completed training activities across all sports.
 
 <p align="center">
-  <img src="public/pwa-512x512.png" width="128" height="128" alt="Intervals Companion Logo" />
+  <img src="public/pwa-512x512.png" width="120" height="120" alt="Intervals Companion Logo" />
 </p>
 
 ## Key Features
-- **Intervals.icu Web Browser Login (OAuth 2.0):** Simple one-tap login via Chrome Custom Tabs (`https://intervals.icu/oauth/authorize`) with automatic athlete profile resolution (`athleteId = 0`) — no manual Athlete ID or API key entry needed.
-- **Current-Day & Weekly Training Calendar:** Defaults to today's workouts with one-tap switching across days of the week or the full week.
-- **Multi-Sport Selection & Filtering:** Choose which activity types (`Running`, `Swimming`, `Strength`, `Mobility`, `Pilates`, `Yoga`, `Cycling`) to sync in **Settings**, and filter your calendar via the floating bottom-right filter button (`All / Incoming / Done` + workout types).
-- **Running Pace-Time Step Diagrams:** Visualizes structured `workout_doc` intervals (`% Pace` and `min/km`) exclusively for running workouts.
-- **Pull-Down to Force Collect & WorkManager Auto-Sync:** Pull down on the calendar at any time to sync immediately, or configure background auto-sync every `6h`, `12h`, `24h`, or `Manual Only`.
-- **System / Dark / Light Appearance:** Full theme support in Settings.
-- **Multi-Language Localization (`en`, `de`, `ru`, `fr`, `it`) + GitHub Remote Locales:** Built-in offline translations with dynamic over-the-air language updates directly from this repository.
+
+- **Official Intervals.icu OAuth 2.0 + PKCE (`S256`) Login:** One-tap authorization via Intervals.icu (`Client ID #1781`) using read-only scopes (`CALENDAR:READ`, `ACTIVITY:READ`). Automatically resolves the authenticated athlete (`athleteId = 0`) — no manual Athlete ID or API key required.
+- **Unconditional Multi-Sport Sync & Dynamic Filter:** Downloads and displays **100% of all scheduled workouts and completed activities** returned by Intervals.icu (`Running`, `Cycling`, `Swimming`, `Walking`, `Hiking`, `Rowing`, `Nordic Ski`, `Strength`, `HIIT`, `Mobility`, `Pilates`, `Yoga`, and any other Intervals.icu sport). Filter by workout status (`All / Incoming / Done`) or toggle individual sports dynamically via the bottom-right filter button.
+- **Interactive Running Pace-Time Step Diagrams:** Visualizes structured `workout_doc` intervals (`% Pace` and `min/km` or `min/mi`) with touch/click block inspection and time-in-zones breakdown.
+- **Completed Activity Telemetry & Intervals:** Inspect heart rate, power, pace, GAP, cadence, elevation, workout compliance, fitness/fatigue/form (`CTL`/`ATL`), and lap splits.
+- **Phone & Tablet Responsive Layouts:**
+  - **Phone:** Locked to Portrait for focused one-handed navigation.
+  - **Tablet Portrait & Landscape:** Automatic orientation adaptation featuring a **2-Pane Master–Detail Split View** in Tablet Landscape for both the Calendar/Incoming feed and Settings, plus a compact floating filter sheet.
+- **Horizontal Card Swipe Navigation:** Swipe left or right inside any opened Scheduled Workout or Completed Activity card to step seamlessly through the active Calendar or Incoming list.
+- **Pull-Down to Force Collect & 24h Background Auto-Sync:** Pull down on the calendar at any time to sync immediately, or configure background auto-sync (`Every 24h` default, `12h`, `6h`, or `Manual Only`), Wi-Fi only sync, and daily `07:00 AM` workout digest notifications.
+- **Android 15+ Adaptive & Monochrome Launcher Icon:** Includes both full-color adaptive icons and a single-color monochrome vector layer (`public/icon-monochrome.svg`) for Android 13–15+ Material You themed home screens.
+- **Multi-Language Localization (`en`, `es`, `de`, `ru`, `fr`, `it`) + Live GitHub Locales:** Bundled offline translations for English, Español, Deutsch, Русский, Français, and Italiano, with automatic background fetching of new language files added to `/public/locales/` in this repository.
 
 ---
 
 ## Repository Structure
-- **`/android-kotlin/`** — Native Android application source code (`Kotlin 2.0`, `Jetpack Compose Material 3`, `Retrofit2`, `WorkManager`, and `CustomTabsIntent` OAuth 2.0 + PKCE `S256`).
-- **`/public/locales/`** — JSON localization resource files (`index.json`, `en.json`, `de.json`, `ru.json`, `fr.json`, `it.json`) shared with `/android-kotlin/app/src/main/assets/locales/`.
-- **`/src/` & `/server.ts`** — Interactive browser-based Android Studio + Pixel 9 Pro (Android 15) preview environment.
-- **`/PRIVACY.md`** — Public Privacy Policy for Intervals.icu OAuth registration and Google Play Store.
-- **`/public/pwa-512x512.png`** — App icon (512×512 PNG) for OAuth application registration.
+
+- **`/src/` & `/server.ts`** — Full-featured Progressive Web App (PWA) & interactive Android Phone/Tablet companion interface (React 19, TypeScript, Tailwind CSS, Express with `express-rate-limit`).
+- **`/android-kotlin/`** — Native Android Kotlin + Jetpack Compose project reference (`Kotlin 2.0`, `Material 3`, `Retrofit2`, `WorkManager`, and `CustomTabsIntent` PKCE OAuth).
+- **`/public/locales/`** — JSON localization dictionaries (`index.json`, `en.json`, `es.json`, `de.json`, `ru.json`, `fr.json`, `it.json`).
+- **`/PRIVACY.md`** — Public Privacy Policy for Intervals.icu OAuth and Google Play Store.
+- **`/TERMS.md`** — Open-source Terms & Conditions ("AS IS" warranty disclaimer and training/health notice).
+- **`/SECURITY.md`** — Security architecture & vulnerability reporting policy.
+- **`/LICENSE`** — MIT License.
 
 ---
 
-## How to Add a New Language
+## How to Add or Update a Language
 
-The app uses flat JSON dictionary files located in **`public/locales/`**. New languages uploaded to the `main` branch of this repository can be fetched directly inside the app (**Settings → Fetch Languages from GitHub**) without waiting for a new Google Play Store release.
+The app uses flat JSON dictionary files located in **`public/locales/`**. New languages uploaded to the `main` branch of this repository are fetched automatically when opening the language selector in **Onboarding** or **Settings → Language** without requiring an app update.
 
-### Step 1: Create the Language JSON File
-1. Copy [`public/locales/en.json`](./public/locales/en.json) to a new file named with the ISO 639-1 language code (for example, `public/locales/es.json` for Spanish or `public/locales/pl.json` for Polish).
-2. Translate the values while keeping the JSON keys and `{placeholder}` variables (such as `{hours}`, `{load}`, `{num}`, `{count}`) unchanged:
+1. Copy [`public/locales/en.json`](./public/locales/en.json) to `public/locales/<code >.json` (e.g., `pt.json` or `pl.json`).
+2. Translate the string values while keeping `{placeholder}` tokens (`{hours}`, `{load}`, `{num}`, `{count}`, `{days}`) intact. Any omitted keys automatically fall back to English (`en.json`).
+3. Add the language metadata entry to [`public/locales/index.json`](./public/locales/index.json):
    ```json
    {
-     "nav.calendar": "Calendario",
-     "nav.incoming": "Próximos",
-     "nav.settings": "Ajustes",
-     "calendar.week": "Semana {num}",
-     "card.load": "Carga {load}"
+     "code": "pt",
+     "name": "Portuguese",
+     "nativeName": "Português",
+     "flag": "🇵🇹",
+     "file": "pt.json"
    }
    ```
-   *(Note: If any key is omitted, the app automatically falls back to `en.json` so the UI never breaks.)*
-
-### Step 2: Register the Language in `public/locales/index.json`
-Add an entry to the `"languages"` array in [`public/locales/index.json`](./public/locales/index.json):
-
-```json
-{
-  "code": "es",
-  "name": "Spanish",
-  "nativeName": "Español",
-  "flag": "🇪🇸",
-  "file": "es.json"
-}
-```
-
-### Step 3: Optional — Bundle for Offline Android Builds
-If you also want the new language bundled inside future offline APK builds, copy the file into `/android-kotlin/app/src/main/assets/locales/`.
-
-### Step 4: Load in the App
-Once pushed to GitHub, open the app, go to **Settings → App Language & GitHub Locales**, and tap **Fetch Languages from GitHub**. The new language will appear immediately and be cached locally on the device.
 
 ---
 
-## Building the Native Android App (`/android-kotlin`)
-1. Open the `/android-kotlin` folder in **Android Studio Ladybug (or newer)** with **JDK 17** and **Android SDK 35**.
-2. Once your Intervals.icu OAuth application is approved at [https://intervals.icu/oauth/apply](https://intervals.icu/oauth/apply), set your OAuth `client_id` in `IntervalsWebAuthManager.kt` (or `local.properties` — never commit secrets to git).
-3. Run the `app` configuration on a physical Android device or emulator.
+## Local Development
 
----
-
-## Running the Interactive Browser Preview
 ```bash
 npm install
 cp .env.example .env
 npm run dev
 ```
 
-## Privacy Policy & License
-- **Privacy Policy:** See [PRIVACY.md](./PRIVACY.md)
-- **License:** [MIT](./LICENSE)
+Build for production:
+```bash
+npm run build
+npm start
+```
 
+---
+
+## Legal & Documentation
+
+- **Privacy Policy:** [PRIVACY.md](./PRIVACY.md)
+- **Terms & Conditions:** [TERMS.md](./TERMS.md)
+- **Security Policy:** [SECURITY.md](./SECURITY.md)
+- **License:** [MIT License](./LICENSE)
