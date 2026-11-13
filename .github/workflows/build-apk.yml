@@ -33,12 +33,12 @@ jobs:
         env:
           VITE_CAPACITOR_BUILD: 'true'
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Initialize Capacitor Android project
         run: |
-          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
+          npm install --legacy-peer-deps @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
           npx cap add android
           npx cap sync android
 
