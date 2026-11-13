@@ -2,7 +2,6 @@
   "appId": "icu.intervals.companion",
   "appName": "Intervals Companion",
   "webDir": "dist",
-  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
   }

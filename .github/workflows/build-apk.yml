@@ -16,16 +16,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+      - name: Setup Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '22'
 
       - name: Setup Java JDK 21
-        uses: actions/setup-java@8df1039502a15bceb9433410b1a100fbe190c53b # v4.5.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -39,12 +38,14 @@ jobs:
 
       - name: Initialize Capacitor Android project
         run: |
-          npm install --no-save @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
           npx cap add android
           npx cap sync android
 
       - name: Configure Android OAuth Deep-Link, Orientation & App Icons
         run: |
+          mkdir -p android/app/src/main/java/icu/intervals/companion
+
           # 1. Write MainActivity.java with intervalscompanion://oauth/callback handler and phone portrait lock
           cat << 'EOF' > android/app/src/main/java/icu/intervals/companion/MainActivity.java
           package icu.intervals.companion;
@@ -132,7 +133,7 @@ jobs:
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload Intervals Companion APK Artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Intervals-Companion-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
