@@ -172,26 +172,38 @@ export function getSystemDefaultLanguage(): string {
 
 export function getSystemDefaultUnits(): UnitSystem {
   try {
-    const locales: string[] = [];
-    if (typeof navigator !== 'undefined') {
-      if (Array.isArray(navigator.languages)) {
-        locales.push(...navigator.languages);
-      }
-      if (navigator.language) {
-        locales.push(navigator.language);
-      }
-    }
     if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
-      const resolved = Intl.DateTimeFormat().resolvedOptions().locale;
-      if (resolved) locales.push(resolved);
+      const opts = Intl.DateTimeFormat().resolvedOptions();
+      const tz = String(opts.timeZone || '');
+      // Devices in continental Europe, Asia, Latin America, Africa, or Oceania use metric even if UI language is en-US
+      if (
+        tz &&
+        !tz.startsWith('America/') &&
+        !tz.startsWith('US/') &&
+        tz !== 'Pacific/Honolulu' &&
+        tz !== 'Africa/Monrovia' &&
+        tz !== 'Asia/Yangon'
+      ) {
+        return 'metric';
+      }
     }
 
-    for (const loc of locales) {
-      const normalized = loc.replace('_', '-').toUpperCase();
+    const primaryLocale =
+      (typeof Intl !== 'undefined' &&
+        Intl.DateTimeFormat &&
+        Intl.DateTimeFormat().resolvedOptions().locale) ||
+      (typeof navigator !== 'undefined' ? navigator.language : '') ||
+      '';
+
+    if (primaryLocale) {
+      const normalized = primaryLocale.replace('_', '-').toUpperCase();
       const parts = normalized.split('-');
       const region = parts.length > 1 ? parts[parts.length - 1] : '';
-      if (region === 'US' || region === 'LR' || region === 'MM' || region === 'GB' || region === 'UK') {
+      if (region === 'US' || region === 'LR' || region === 'MM') {
         return 'imperial';
+      }
+      if (region) {
+        return 'metric';
       }
     }
   } catch {

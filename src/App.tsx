@@ -54,10 +54,12 @@ import { IntervalsWebLoginSheet } from './components/IntervalsWebLoginSheet';
 import { OnboardingFlow, OnboardingStep } from './components/OnboardingFlow';
 import { useLocalization } from './i18n/useTranslation';
 import {
+  closeNativeOAuthBrowser,
   exchangeNativePkceCode,
   isStandaloneCapacitorApk,
   syncIntervalsDirect,
 } from './utils/intervalsClient';
+import { scheduleUpcomingWorkoutNotifications } from './utils/notifications';
 
 const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
 const OAUTH_TOKEN_STORAGE_KEY = 'intervals_icu_oauth_token_v5';
@@ -85,28 +87,60 @@ function detectViewportDeviceMode(): DeviceViewportMode {
   return w > h ? 'tablet-landscape' : 'tablet-portrait';
 }
 
+function getRecordKey(item: Record<string, unknown>): string {
+  return String(item.id || `${item.start_date_local}-${item.name}`);
+}
+
+function getRecordDateIso(item: Record<string, unknown>): string {
+  return String(item.start_date_local || item.date || '').slice(0, 10);
+}
+
+function getRecordSignature(item: Record<string, unknown>): string {
+  return JSON.stringify({
+    name: item.name,
+    start: item.start_date_local,
+    type: item.type,
+    moving_time: item.moving_time,
+    distance: item.distance,
+    load: item.icu_training_load,
+    intensity: item.icu_intensity,
+    paired: item.paired_event_id,
+    updated: item.updated,
+    desc: item.description,
+  });
+}
+
 function mergePayloads(
   prev: LiveIntervalsPayload,
-  incoming: LiveIntervalsPayload
+  incoming: LiveIntervalsPayload,
+  oldestIso?: string,
+  newestIso?: string
 ): LiveIntervalsPayload {
+  const isInSyncWindow = (item: Record<string, unknown>) => {
+    if (!oldestIso || !newestIso) return false;
+    const d = getRecordDateIso(item);
+    return Boolean(d && d >= oldestIso && d <= newestIso);
+  };
+
   const eventMap = new Map<string, Record<string, unknown>>();
   for (const ev of prev.events || []) {
-    const key = String(ev.id || `${ev.start_date_local}-${ev.name}`);
-    eventMap.set(key, ev);
+    // Keep cached events outside the refreshed window; inside the window incoming is authoritative
+    if (!isInSyncWindow(ev)) {
+      eventMap.set(getRecordKey(ev), ev);
+    }
   }
   for (const ev of incoming.events || []) {
-    const key = String(ev.id || `${ev.start_date_local}-${ev.name}`);
-    eventMap.set(key, ev);
+    eventMap.set(getRecordKey(ev), ev);
   }
 
   const activityMap = new Map<string, Record<string, unknown>>();
   for (const act of prev.activities || []) {
-    const key = String(act.id || `${act.start_date_local}-${act.name}`);
-    activityMap.set(key, act);
+    if (!isInSyncWindow(act)) {
+      activityMap.set(getRecordKey(act), act);
+    }
   }
   for (const act of incoming.activities || []) {
-    const key = String(act.id || `${act.start_date_local}-${act.name}`);
-    activityMap.set(key, act);
+    activityMap.set(getRecordKey(act), act);
   }
 
   return {
@@ -115,6 +149,118 @@ function mergePayloads(
     activities: Array.from(activityMap.values()),
     wellness: incoming.wellness || prev.wellness || [],
   };
+}
+
+function formatSyncSummaryToast(
+  prev: LiveIntervalsPayload,
+  incoming: LiveIntervalsPayload,
+  merged: LiveIntervalsPayload,
+  oldestIso: string,
+  newestIso: string
+): string {
+  const isWorkoutEvent = (ev: Record<string, unknown>) => {
+    const cat = String(ev.category || 'WORKOUT').toUpperCase();
+    return cat !== 'NOTE' && cat !== 'HOLIDAY' && cat !== 'SICK';
+  };
+
+  const prevEventsInWindow = (prev.events || []).filter((ev) => {
+    const d = getRecordDateIso(ev);
+    return d >= oldestIso && d <= newestIso && isWorkoutEvent(ev);
+  });
+  const incomingWorkoutEvents = (incoming.events || []).filter(isWorkoutEvent);
+
+  const prevEventMap = new Map<string, string>();
+  for (const ev of prevEventsInWindow) {
+    prevEventMap.set(getRecordKey(ev), getRecordSignature(ev));
+  }
+
+  let newWorkouts = 0;
+  let updatedWorkouts = 0;
+  const incomingEventKeys = new Set<string>();
+  for (const ev of incomingWorkoutEvents) {
+    const key = getRecordKey(ev);
+    incomingEventKeys.add(key);
+    const prevSig = prevEventMap.get(key);
+    if (!prevSig) {
+      newWorkouts++;
+    } else if (prevSig !== getRecordSignature(ev)) {
+      updatedWorkouts++;
+    }
+  }
+  let removedWorkouts = 0;
+  for (const key of prevEventMap.keys()) {
+    if (!incomingEventKeys.has(key)) removedWorkouts++;
+  }
+
+  const prevActsInWindow = (prev.activities || []).filter((act) => {
+    const d = getRecordDateIso(act);
+    return d >= oldestIso && d <= newestIso;
+  });
+  const prevActMap = new Map<string, string>();
+  for (const act of prevActsInWindow) {
+    prevActMap.set(getRecordKey(act), getRecordSignature(act));
+  }
+
+  let newActivities = 0;
+  let updatedActivities = 0;
+  for (const act of incoming.activities || []) {
+    const key = getRecordKey(act);
+    const prevSig = prevActMap.get(key);
+    if (!prevSig) {
+      newActivities++;
+    } else if (prevSig !== getRecordSignature(act)) {
+      updatedActivities++;
+    }
+  }
+
+  // Current week summary counts
+  const currentWeek = buildWeekForOffset(0, merged);
+  let weekPlanned = 0;
+  let weekCompleted = 0;
+  for (const day of currentWeek.days) {
+    weekPlanned += day.scheduledWorkouts.length;
+    weekCompleted += day.completedActivities.length;
+  }
+
+  const isFirstSync =
+    (prev.events?.length || 0) === 0 && (prev.activities?.length || 0) === 0;
+
+  if (isFirstSync) {
+    return `Initial sync complete · ${weekCompleted} done & ${weekPlanned} planned this week.`;
+  }
+
+  const changeParts: string[] = [];
+  if (newActivities > 0) {
+    changeParts.push(
+      `+${newActivities} new ${newActivities === 1 ? 'activity' : 'activities'}`
+    );
+  }
+  if (updatedActivities > 0) {
+    changeParts.push(
+      `${updatedActivities} updated ${updatedActivities === 1 ? 'activity' : 'activities'}`
+    );
+  }
+  if (newWorkouts > 0) {
+    changeParts.push(
+      `+${newWorkouts} new ${newWorkouts === 1 ? 'workout' : 'workouts'}`
+    );
+  }
+  if (updatedWorkouts > 0) {
+    changeParts.push(
+      `${updatedWorkouts} updated ${updatedWorkouts === 1 ? 'workout' : 'workouts'}`
+    );
+  }
+  if (removedWorkouts > 0) {
+    changeParts.push(
+      `${removedWorkouts} removed ${removedWorkouts === 1 ? 'workout' : 'workouts'}`
+    );
+  }
+
+  if (changeParts.length > 0) {
+    return `Synced ${changeParts.join(', ')} · ${weekCompleted} done & ${weekPlanned} planned this week.`;
+  }
+
+  return `Up to date · ${weekCompleted} done & ${weekPlanned} planned this week.`;
 }
 
 export default function App() {
@@ -214,6 +360,10 @@ export default function App() {
     }
     return { athlete: null, events: [], activities: [], wellness: [] };
   });
+  const livePayloadRef = useRef<LiveIntervalsPayload>(livePayload);
+  useEffect(() => {
+    livePayloadRef.current = livePayload;
+  }, [livePayload]);
 
   // 0 = Current Week (always opens on the current week!), -1 = Previous Week, +1 = Next Week
   const [weekOffset, setWeekOffset] = useState<number>(0);
@@ -308,10 +458,13 @@ export default function App() {
     };
   });
 
+  const [todayIso, setTodayIso] = useState<string>(() => toLocalIsoDate(new Date()));
+  const lastActiveTodayRef = useRef<string>(todayIso);
+
   // Build the currently viewed week (0 = Current Week, -1 = Last Week, +1 = Next Week, etc.)
   const activeWeek: WeekSummary = useMemo(
     () => buildWeekForOffset(weekOffset, livePayload),
-    [weekOffset, livePayload]
+    [weekOffset, livePayload, todayIso]
   );
 
   // Build multi-week range around current week for Incoming Workouts tab & activity stepping
@@ -321,7 +474,37 @@ export default function App() {
       list.push(buildWeekForOffset(offset, livePayload));
     }
     return list;
-  }, [livePayload]);
+  }, [livePayload, todayIso]);
+
+  const [scheduledDigestCount, setScheduledDigestCount] = useState<number>(0);
+
+  // Schedule upcoming morning workout digest notifications whenever calendar data or notification settings update
+  useEffect(() => {
+    if (!settings.isLoggedIn) {
+      setScheduledDigestCount(0);
+      return;
+    }
+    let cancelled = false;
+    scheduleUpcomingWorkoutNotifications({
+      enabled: Boolean(settings.morningWorkoutNotification),
+      timeStr: settings.workoutNotificationTime || '07:00',
+      weeks: multiWeeksRange,
+      units: settings.units,
+    })
+      .then((count) => {
+        if (!cancelled) setScheduledDigestCount(count);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    settings.isLoggedIn,
+    settings.morningWorkoutNotification,
+    settings.workoutNotificationTime,
+    settings.units,
+    multiWeeksRange,
+  ]);
 
   // Dynamically discover all sport types actually present in the athlete's synced Intervals.icu account
   const discoveredSports: SportType[] = useMemo(() => {
@@ -440,23 +623,25 @@ export default function App() {
 
         if (liveResult) {
           const data = liveResult;
-          setLivePayload((prev) => {
-            const merged = mergePayloads(prev, {
-              athlete: data.athlete,
-              events: data.events,
-              activities: data.activities,
-              wellness: data.wellness,
-            });
-            try {
-              localStorage.setItem(
-                LIVE_CACHE_STORAGE_KEY,
-                JSON.stringify({ payload: merged, lastSyncedAt: nowIso })
-              );
-            } catch {
-              // ignore
-            }
-            return merged;
-          });
+          const prevPayload = livePayloadRef.current;
+          const incomingPayload: LiveIntervalsPayload = {
+            athlete: data.athlete,
+            events: data.events,
+            activities: data.activities,
+            wellness: data.wellness,
+          };
+          const merged = mergePayloads(prevPayload, incomingPayload, oldestIso, newestIso);
+          livePayloadRef.current = merged;
+          setLivePayload(merged);
+
+          try {
+            localStorage.setItem(
+              LIVE_CACHE_STORAGE_KEY,
+              JSON.stringify({ payload: merged, lastSyncedAt: nowIso })
+            );
+          } catch {
+            // ignore
+          }
 
           if (data.athlete?.name) {
             handleUpdateSettings({
@@ -478,11 +663,14 @@ export default function App() {
           }));
 
           if (isManualForceCollect) {
-            const evCount = Array.isArray(data.events) ? data.events.length : 0;
-            const actCount = Array.isArray(data.activities) ? data.activities.length : 0;
-            setSyncToast(
-              `Synced ${evCount} planned workouts & ${actCount} activities from Intervals.icu.`
+            const toastMessage = formatSyncSummaryToast(
+              prevPayload,
+              incomingPayload,
+              merged,
+              oldestIso,
+              newestIso
             );
+            setSyncToast(toastMessage);
           }
         } else {
           setSyncState((prev) => ({
@@ -559,9 +747,12 @@ export default function App() {
       }
     };
 
-    const handleDeepLinkCode = async (code: string) => {
+    const handleDeepLinkCode = async (code: string, state?: string) => {
       if (!code || handledOAuthCodeRef.current === code) return;
       handledOAuthCodeRef.current = code;
+
+      // Immediately close the Android Custom Tab (@capacitor/browser) if still open
+      closeNativeOAuthBrowser().catch(() => {});
 
       // Immediately clean `?code=` from URL bar so re-renders never re-trigger exchange
       if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -570,7 +761,7 @@ export default function App() {
 
       try {
         setSyncToast('Completing Intervals.icu sign-in...');
-        const exchanged = await exchangeNativePkceCode(code);
+        const exchanged = await exchangeNativePkceCode(code, state);
         completeOAuthLogin(exchanged.athleteName, exchanged.athleteId, exchanged.accessToken);
       } catch (err) {
         setSyncToast(
@@ -583,15 +774,16 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       const urlCode = searchParams.get('code');
+      const urlState = searchParams.get('state') || undefined;
       if (urlCode) {
-        handleDeepLinkCode(urlCode);
+        handleDeepLinkCode(urlCode, urlState);
       }
     }
 
     const handleNativeOAuthEvent = (e: Event) => {
-      const custom = e as CustomEvent<{ code?: string }>;
+      const custom = e as CustomEvent<{ code?: string; state?: string }>;
       if (custom.detail?.code) {
-        handleDeepLinkCode(custom.detail.code);
+        handleDeepLinkCode(custom.detail.code, custom.detail.state);
       }
     };
 
@@ -614,7 +806,35 @@ export default function App() {
     [syncState.lastSyncedAt, settings.autoSyncHours]
   );
 
-  const todayIso = useMemo(() => toLocalIsoDate(new Date()), []);
+  // Refresh current day selection in the week navigator when returning from background on a new calendar day
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkForegroundDayRollover = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      const nowTodayIso = toLocalIsoDate(new Date());
+      if (nowTodayIso !== lastActiveTodayRef.current) {
+        lastActiveTodayRef.current = nowTodayIso;
+        setTodayIso(nowTodayIso);
+        setWeekOffset(0);
+        setSelectedDayDate((prev) => (prev === 'ALL' ? 'ALL' : nowTodayIso));
+      }
+    };
+
+    document.addEventListener('visibilitychange', checkForegroundDayRollover);
+    window.addEventListener('focus', checkForegroundDayRollover);
+    window.addEventListener('pageshow', checkForegroundDayRollover);
+    const intervalId = setInterval(checkForegroundDayRollover, 60000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', checkForegroundDayRollover);
+      window.removeEventListener('focus', checkForegroundDayRollover);
+      window.removeEventListener('pageshow', checkForegroundDayRollover);
+      clearInterval(intervalId);
+    };
+  }, []);
 
   const allIncomingFiltered = useMemo(
     () =>
@@ -891,6 +1111,110 @@ export default function App() {
   const hasCustomFilterActive =
     feedFilter !== 'all' || activeSportSet.size < discoveredSports.length;
 
+  const handleBackNavigation = useCallback((): boolean => {
+    if (showKotlinModal) {
+      setShowKotlinModal(false);
+      return true;
+    }
+    if (showWebLoginSheet) {
+      setShowWebLoginSheet(false);
+      return true;
+    }
+    if (isOnboardingActive) {
+      if (onboardingStep > 1) {
+        setOnboardingStep((prev) => (prev - 1) as OnboardingStep);
+        scrollToTop();
+        return true;
+      }
+      return false;
+    }
+    if (isFilterPopoverOpen) {
+      setIsFilterPopoverOpen(false);
+      return true;
+    }
+    if (selectedItem && !isTabletLandscape) {
+      setSelectedItem(null);
+      setShowFloatingBottomBar(true);
+      return true;
+    }
+    if (
+      activeSection === 'settings' &&
+      settingsSubMenu !== null &&
+      !isTabletLandscape
+    ) {
+      setSettingsSubMenu(null);
+      scrollToTop();
+      return true;
+    }
+    if (activeSection !== 'calendar') {
+      setSettingsSubMenu(null);
+      setActiveSection('calendar');
+      setShowFloatingBottomBar(true);
+      scrollToTop();
+      return true;
+    }
+    if (weekOffset !== 0) {
+      setWeekOffset(0);
+      setSelectedDayDate(todayIso);
+      scrollToTop();
+      return true;
+    }
+    if (selectedDayDate === 'ALL') {
+      setSelectedDayDate(todayIso);
+      scrollToTop();
+      return true;
+    }
+    return false;
+  }, [
+    showKotlinModal,
+    showWebLoginSheet,
+    isOnboardingActive,
+    onboardingStep,
+    isFilterPopoverOpen,
+    selectedItem,
+    isTabletLandscape,
+    activeSection,
+    settingsSubMenu,
+    weekOffset,
+    selectedDayDate,
+    todayIso,
+  ]);
+
+  const handleBackNavigationRef = useRef(handleBackNavigation);
+  useEffect(() => {
+    handleBackNavigationRef.current = handleBackNavigation;
+  }, [handleBackNavigation]);
+
+  // Expose window.__handleAndroidBackGesture for Capacitor MainActivity OnBackPressedCallback
+  // and bind browser popstate for web/PWA back gesture navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const win = window as Window & {
+      __handleAndroidBackGesture?: () => boolean;
+    };
+    win.__handleAndroidBackGesture = () => handleBackNavigationRef.current();
+
+    if (!isStandaloneCapacitorApk()) {
+      window.history.pushState({ intervalsInAppGuard: true }, '');
+      const onPopState = () => {
+        const handled = handleBackNavigationRef.current();
+        if (handled) {
+          window.history.pushState({ intervalsInAppGuard: true }, '');
+        }
+      };
+      window.addEventListener('popstate', onPopState);
+      return () => {
+        window.removeEventListener('popstate', onPopState);
+        delete win.__handleAndroidBackGesture;
+      };
+    }
+
+    return () => {
+      delete win.__handleAndroidBackGesture;
+    };
+  }, []);
+
   return (
     <AndroidEmulatorFrame
       isEmulatorActive={isEmulatorActive}
@@ -901,32 +1225,7 @@ export default function App() {
         setDeviceMode(nextMode);
       }}
       onBackGesture={() => {
-        if (isOnboardingActive) {
-          if (onboardingStep > 1) {
-            setOnboardingStep((prev) => (prev - 1) as OnboardingStep);
-            scrollToTop();
-          }
-          return;
-        }
-        if (isFilterPopoverOpen) {
-          setIsFilterPopoverOpen(false);
-        } else if (selectedItem && !isTabletLandscape) {
-          setSelectedItem(null);
-          setShowFloatingBottomBar(true);
-        } else if (
-          activeSection === 'settings' &&
-          settingsSubMenu !== null &&
-          !isTabletLandscape
-        ) {
-          setSettingsSubMenu(null);
-          scrollToTop();
-        } else if (activeSection !== 'calendar') {
-          setSettingsSubMenu(null);
-          setActiveSection('calendar');
-          setShowFloatingBottomBar(true);
-        } else if (selectedItem && isTabletLandscape) {
-          setSelectedItem(null);
-        }
+        handleBackNavigation();
       }}
       onHomeGesture={() => {
         if (isOnboardingActive) return;
@@ -1159,6 +1458,7 @@ export default function App() {
                 isTabletLandscape={isTabletLandscape}
                 lastSyncLabel={syncTiming.lastSyncLabel}
                 nextSyncLabel={syncTiming.nextSyncLabel}
+                scheduledDigestCount={scheduledDigestCount}
                 t={t}
                 availableLanguages={availableLanguages}
                 activeSubMenu={settingsSubMenu}
@@ -1237,13 +1537,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div
-                  className={
-                    isEmulatorActive
-                      ? 'grid grid-cols-1 gap-3'
-                      : 'grid grid-cols-1 sm:grid-cols-2 gap-3.5'
-                  }
-                >
+                <div className="grid grid-cols-1 gap-3">
                   {allIncomingFiltered.map((workout) => {
                     const parsedDate = new Date(`${workout.date}T12:00:00`);
                     const dateLabel = parsedDate.toLocaleDateString('en-GB', {
@@ -1526,13 +1820,7 @@ export default function App() {
                 </div>
 
                 {/* Day-by-Day Schedule Filtered by Status & Checked Workout Types */}
-                <div
-                  className={
-                    isEmulatorActive || selectedDayDate !== 'ALL'
-                      ? 'grid grid-cols-1 gap-3'
-                      : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-start'
-                  }
-                >
+                <div className="grid grid-cols-1 gap-3">
                   {visibleDays.map((day) => {
                     const showCompleted = feedFilter === 'all' || feedFilter === 'completed';
                     const showScheduled = feedFilter === 'all' || feedFilter === 'scheduled';

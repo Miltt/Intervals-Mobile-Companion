@@ -10,6 +10,7 @@ import {
 import {
   createNativePkceAuthorizeUrl,
   isStandaloneCapacitorApk,
+  openNativeOAuthBrowser,
 } from '../utils/intervalsClient';
 
 interface IntervalsWebLoginSheetProps {
@@ -131,7 +132,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
 
       if (isStandaloneCapacitorApk()) {
         const nativeUrl = oauthUrl || (await createNativePkceAuthorizeUrl());
-        window.location.href = nativeUrl;
+        await openNativeOAuthBrowser(nativeUrl);
         return;
       }
 
@@ -204,7 +205,7 @@ export const IntervalsWebLoginSheet: React.FC<IntervalsWebLoginSheetProps> = ({
               src="/pwa-512x512.png"
               alt="Intervals Companion Logo"
               referrerPolicy="no-referrer"
-              className="w-14 h-14 rounded-2xl mx-auto border border-cyan-500/40 object-cover shadow-lg"
+              className="w-14 h-14 rounded-full mx-auto object-contain drop-shadow-md"
             />
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
               <Globe className="w-3.5 h-3.5" />

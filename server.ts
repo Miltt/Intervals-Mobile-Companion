@@ -387,7 +387,7 @@ async function startServer() {
       };
 
       const [detailRes, streamsRes] = await Promise.all([
-        fetch(`${INTERVALS_BASE_URL}/activity/${encodeURIComponent(rawId)}`, { headers }),
+        fetch(`${INTERVALS_BASE_URL}/activity/${encodeURIComponent(rawId)}?intervals=true`, { headers }),
         fetch(
           `${INTERVALS_BASE_URL}/activity/${encodeURIComponent(rawId)}/streams?types=time,distance,velocity_smooth,watts,heartrate,cadence,altitude`,
           { headers }

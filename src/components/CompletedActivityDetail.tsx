@@ -7,8 +7,19 @@ import {
   Sparkles,
   Waves,
 } from 'lucide-react';
-import { ActivityStreamPoint, CompletedActivity, SportType, TrainingZone } from '../types/intervals';
-import { formatPaceShort, formatSecondsToClock } from '../utils/formatters';
+import {
+  ActivityIntervalSplit,
+  ActivityStreamPoint,
+  CompletedActivity,
+  SportType,
+  TrainingZone,
+} from '../types/intervals';
+import {
+  classifyHrToZone,
+  formatPaceShort,
+  formatSecondsToClock,
+  parseIntervalsSplits,
+} from '../utils/formatters';
 import {
   fetchActivityStreamsDirect,
   isStandaloneCapacitorApk,
@@ -59,6 +70,22 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
   const [intervalFilter, setIntervalFilter] = useState<IntervalFilter>('ALL');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [liveStreams, setLiveStreams] = useState<ActivityStreamPoint[]>(activity.streams || []);
+  const [liveIntervals, setLiveIntervals] = useState<ActivityIntervalSplit[]>(
+    activity.intervals || []
+  );
+  const [liveHrZoneTimesSec, setLiveHrZoneTimesSec] = useState<number[] | undefined>(
+    activity.hrZoneTimesSec
+  );
+  const [liveHrZonesBpm, setLiveHrZonesBpm] = useState<number[] | undefined>(
+    activity.hrZonesBpm
+  );
+  const [liveLthrBpm, setLiveLthrBpm] = useState<number | undefined>(activity.lthrBpm);
+  const [liveRestingHrBpm, setLiveRestingHrBpm] = useState<number | undefined>(
+    activity.restingHrBpm
+  );
+  const [liveAthleteMaxHrBpm, setLiveAthleteMaxHrBpm] = useState<number | undefined>(
+    activity.athleteMaxHrBpm
+  );
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleSwipeStart = (clientX: number, clientY: number, target?: EventTarget | null) => {
@@ -88,6 +115,12 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
 
   useEffect(() => {
     setLiveStreams(activity.streams || []);
+    setLiveIntervals(activity.intervals || []);
+    setLiveHrZoneTimesSec(activity.hrZoneTimesSec);
+    setLiveHrZonesBpm(activity.hrZonesBpm);
+    setLiveLthrBpm(activity.lthrBpm);
+    setLiveRestingHrBpm(activity.restingHrBpm);
+    setLiveAthleteMaxHrBpm(activity.athleteMaxHrBpm);
     if (!activity.id) return;
 
     let cancelled = false;
@@ -104,10 +137,13 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           // ignore
         }
 
+        let rawActivityDetail: Record<string, unknown> | null = null;
         let rawStreams: Array<{ type: string; data: unknown[] }> = [];
 
         if (isStandaloneCapacitorApk() && accessToken) {
-          rawStreams = await fetchActivityStreamsDirect(accessToken, activity.id);
+          const directData = await fetchActivityStreamsDirect(accessToken, activity.id);
+          rawActivityDetail = directData.activity;
+          rawStreams = directData.streams;
         } else {
           const headers: Record<string, string> = {};
           if (accessToken) {
@@ -119,11 +155,64 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           ).catch(() => null);
           if (res && res.ok) {
             const data = await res.json().catch(() => null);
+            if (data?.activity && typeof data.activity === 'object') {
+              rawActivityDetail = data.activity as Record<string, unknown>;
+            }
             if (Array.isArray(data?.streams)) {
               rawStreams = data.streams;
             }
           } else if (accessToken) {
-            rawStreams = await fetchActivityStreamsDirect(accessToken, activity.id);
+            const directData = await fetchActivityStreamsDirect(accessToken, activity.id);
+            rawActivityDetail = directData.activity;
+            rawStreams = directData.streams;
+          }
+        }
+
+        if (cancelled) return;
+
+        let effectiveHrZones = activity.hrZonesBpm;
+        let effectiveZoneTimes = activity.hrZoneTimesSec;
+        let effectiveLthr = activity.lthrBpm;
+
+        if (rawActivityDetail) {
+          if (Array.isArray(rawActivityDetail.icu_hr_zones)) {
+            const z = rawActivityDetail.icu_hr_zones
+              .map((v) => Number(v || 0))
+              .filter((v) => v > 0);
+            if (z.length >= 5) {
+              effectiveHrZones = z;
+              setLiveHrZonesBpm(z);
+            }
+          }
+          const rawTimes = Array.isArray(rawActivityDetail.icu_hr_zone_times)
+            ? rawActivityDetail.icu_hr_zone_times
+            : Array.isArray(rawActivityDetail.hr_zone_times)
+            ? rawActivityDetail.hr_zone_times
+            : null;
+          if (rawTimes && rawTimes.length > 0) {
+            const tArr = rawTimes.map((v) => Math.max(0, Math.round(Number(v || 0))));
+            effectiveZoneTimes = tArr;
+            setLiveHrZoneTimesSec(tArr);
+          }
+          if (Number(rawActivityDetail.lthr || rawActivityDetail.icu_lthr || 0) > 0) {
+            effectiveLthr = Math.round(
+              Number(rawActivityDetail.lthr || rawActivityDetail.icu_lthr)
+            );
+            setLiveLthrBpm(effectiveLthr);
+          }
+          if (Number(rawActivityDetail.icu_resting_hr || 0) > 0) {
+            setLiveRestingHrBpm(Math.round(Number(rawActivityDetail.icu_resting_hr)));
+          }
+          if (Number(rawActivityDetail.athlete_max_hr || 0) > 0) {
+            setLiveAthleteMaxHrBpm(Math.round(Number(rawActivityDetail.athlete_max_hr)));
+          }
+          if (Array.isArray(rawActivityDetail.icu_intervals)) {
+            const splits = parseIntervalsSplits(
+              rawActivityDetail.icu_intervals,
+              effectiveHrZones,
+              effectiveLthr
+            );
+            setLiveIntervals(splits);
           }
         }
 
@@ -152,6 +241,31 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
         );
         if (totalPoints < 2) return;
 
+        // If the activity object did not include icu_hr_zone_times, compute exact time-in-zone from the full 1s HR stream
+        if (
+          (!effectiveZoneTimes || effectiveZoneTimes.every((s) => s === 0)) &&
+          hrArr.length >= 2
+        ) {
+          const numZones =
+            effectiveHrZones && effectiveHrZones.length >= 5
+              ? effectiveHrZones.length
+              : 7;
+          const computedSec = new Array<number>(numZones).fill(0);
+          const zoneOrder: TrainingZone[] = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'];
+          for (let i = 0; i < hrArr.length; i++) {
+            const hr = hrArr[i] || 0;
+            if (hr <= 0) continue;
+            const dt =
+              i > 0 && timeArr[i] > timeArr[i - 1]
+                ? Math.min(10, timeArr[i] - timeArr[i - 1])
+                : 1;
+            const z = classifyHrToZone(hr, effectiveHrZones, effectiveLthr);
+            const zIdx = Math.min(numZones - 1, Math.max(0, zoneOrder.indexOf(z)));
+            computedSec[zIdx] += dt;
+          }
+          setLiveHrZoneTimesSec(computedSec.map((s) => Math.round(s)));
+        }
+
         // Downsample to at most 120 points for smooth SVG rendering
         const step = Math.max(1, Math.floor(totalPoints / 120));
         const parsed: ActivityStreamPoint[] = [];
@@ -159,18 +273,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
           const vMs = velArr[i] || 0;
           const paceSec = vMs > 0.4 ? Math.round(1000 / vMs) : 0;
           const hr = Math.round(hrArr[i] || 0);
-          const maxHrRef = activity.maxHr || 185;
-          const hrRatio = maxHrRef > 0 ? hr / maxHrRef : 0;
-          const zone: TrainingZone =
-            hrRatio >= 0.92
-              ? 'Z5'
-              : hrRatio >= 0.85
-              ? 'Z4'
-              : hrRatio >= 0.78
-              ? 'Z3'
-              : hrRatio >= 0.68
-              ? 'Z2'
-              : 'Z1';
+          const zone = classifyHrToZone(hr, effectiveHrZones, effectiveLthr);
 
           parsed.push({
             timeSec: Math.round(timeArr[i] || 0),
@@ -196,7 +299,23 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
     return () => {
       cancelled = true;
     };
-  }, [activity.id, activity.maxHr, activity.streams]);
+  }, [
+    activity.id,
+    activity.streams,
+    activity.intervals,
+    activity.hrZoneTimesSec,
+    activity.hrZonesBpm,
+    activity.lthrBpm,
+    activity.restingHrBpm,
+    activity.athleteMaxHrBpm,
+  ]);
+
+  // If the user was on the INTERVALS tab and switched to an activity with 0 intervals, return to TIMELINE
+  useEffect(() => {
+    if (activeTab === 'INTERVALS' && liveIntervals.length === 0) {
+      setActiveTab('TIMELINE');
+    }
+  }, [activeTab, liveIntervals.length]);
 
   const isRun = activity.sport === 'Run';
   const streams = liveStreams;
@@ -294,30 +413,122 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
   }, [streams]);
 
   const hrZoneRows = useMemo(() => {
-    const counts: Record<TrainingZone, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
-    for (const pt of streams) {
-      if (pt.heartRateBpm > 0) {
-        counts[pt.zone] = (counts[pt.zone] || 0) + 1;
+    const formatZoneDuration = (sec: number): string => {
+      const s = Math.max(0, Math.round(sec));
+      if (s <= 0) return '';
+      if (s < 60) return `${s}s`;
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const remSec = s % 60;
+      if (hrs > 0) {
+        const roundedMins = Math.round((s % 3600) / 60);
+        return roundedMins > 0 ? `${hrs}h${roundedMins}m` : `${hrs}h`;
       }
+      return remSec > 0 ? `${mins}m${remSec}s` : `${mins}m`;
+    };
+
+    const lthr = liveLthrBpm && liveLthrBpm > 100 ? liveLthrBpm : 184;
+    const maxHrAthlete =
+      liveAthleteMaxHrBpm && liveAthleteMaxHrBpm > lthr
+        ? liveAthleteMaxHrBpm
+        : Math.round(lthr * 1.07);
+
+    // Use athlete's exact HR zone BPM ceilings from Intervals.icu if available, else standard 7-zone LTHR ceilings
+    const zoneCeilingsBpm: number[] =
+      liveHrZonesBpm && liveHrZonesBpm.length >= 5
+        ? liveHrZonesBpm
+        : [
+            Math.round(lthr * 0.75),
+            Math.round(lthr * 0.826),
+            Math.round(lthr * 0.929),
+            Math.round(lthr * 0.995),
+            Math.round(lthr * 1.022),
+            Math.round(lthr * 1.049),
+            maxHrAthlete,
+          ];
+
+    const numZones = Math.min(7, zoneCeilingsBpm.length);
+
+    let zoneSecArr: number[] = [];
+    if (liveHrZoneTimesSec && liveHrZoneTimesSec.length > 0) {
+      zoneSecArr = zoneCeilingsBpm.map((_, idx) => liveHrZoneTimesSec[idx] || 0);
+    } else {
+      const counts: Record<TrainingZone, number> = {
+        Z1: 0,
+        Z2: 0,
+        Z3: 0,
+        Z4: 0,
+        Z5: 0,
+        Z6: 0,
+        Z7: 0,
+      };
+      for (const pt of streams) {
+        if (pt.heartRateBpm > 0) {
+          counts[pt.zone] = (counts[pt.zone] || 0) + 1;
+        }
+      }
+      const totalPts = Math.max(
+        1,
+        Object.values(counts).reduce((a, b) => a + b, 0)
+      );
+      const zoneKeys: TrainingZone[] = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'];
+      zoneSecArr = zoneKeys
+        .slice(0, numZones)
+        .map((k) => Math.round((counts[k] / totalPts) * (activity.movingTimeSec || 0)));
     }
-    const total = Math.max(
+
+    const totalSec = Math.max(
       1,
-      Object.values(counts).reduce((acc, v) => acc + v, 0)
+      zoneSecArr.reduce((acc, v) => acc + v, 0)
     );
-    const hasAnyHr = streams.some((pt) => pt.heartRateBpm > 0);
-    return [
-      { zone: 'Z1 · Recovery / Easy Aerobic', pct: hasAnyHr ? Math.round((counts.Z1 / total) * 100) : 0, color: '#0d9488' },
-      { zone: 'Z2 · Endurance Base', pct: hasAnyHr ? Math.round((counts.Z2 / total) * 100) : 0, color: '#16a34a' },
-      { zone: 'Z3 · Tempo', pct: hasAnyHr ? Math.round((counts.Z3 / total) * 100) : 0, color: '#eab308' },
-      { zone: 'Z4 · Sub-Threshold', pct: hasAnyHr ? Math.round((counts.Z4 / total) * 100) : 0, color: '#ea580c' },
-      { zone: 'Z5 · VO2 Max', pct: hasAnyHr ? Math.round((counts.Z5 / total) * 100) : 0, color: '#ef4444' },
+    const hasAnyTime = zoneSecArr.some((v) => v > 0);
+
+    const meta7 = [
+      { code: 'Z1', name: 'Recovery', defaultPct: '0 - 75%', color: '#0d9488' },
+      { code: 'Z2', name: 'Aerobic', defaultPct: '76% - 83%', color: '#16a34a' },
+      { code: 'Z3', name: 'Tempo', defaultPct: '83% - 93%', color: '#eab308' },
+      { code: 'Z4', name: 'SubThreshold', defaultPct: '93% - 99%', color: '#ea580c' },
+      { code: 'Z5', name: 'SuperThreshold', defaultPct: '100% - 102%', color: '#ef4444' },
+      { code: 'Z6', name: 'Aerobic Capacity', defaultPct: '103% - 105%', color: '#dc2626' },
+      { code: 'Z7', name: 'Anaerobic', defaultPct: '105%+', color: '#a855f7' },
     ];
-  }, [streams]);
+
+    const rawRows = meta7.slice(0, numZones).map((m, idx) => {
+      const lowBpm = idx === 0 ? 0 : zoneCeilingsBpm[idx - 1] + 1;
+      const highBpm = zoneCeilingsBpm[idx];
+      const bpmRange = `${lowBpm} - ${highBpm}`;
+      const sec = hasAnyTime ? zoneSecArr[idx] || 0 : 0;
+      const pctNum = hasAnyTime ? (sec / totalSec) * 100 : 0;
+      return {
+        code: m.code,
+        name: m.name,
+        pctRange: m.defaultPct,
+        bpmRange,
+        durationLabel: formatZoneDuration(sec),
+        pctNum,
+        pctFormatted: `${pctNum.toFixed(1)}%`,
+        color: m.color,
+      };
+    });
+
+    const maxPct = Math.max(1, ...rawRows.map((r) => r.pctNum));
+    return rawRows.map((r) => ({
+      ...r,
+      barWidthPct: r.pctNum > 0 ? Math.max(2, (r.pctNum / maxPct) * 100) : 0,
+    }));
+  }, [
+    liveHrZoneTimesSec,
+    liveHrZonesBpm,
+    liveLthrBpm,
+    liveAthleteMaxHrBpm,
+    streams,
+    activity.movingTimeSec,
+  ]);
 
   const filteredIntervals = useMemo(() => {
-    if (intervalFilter === 'ALL') return activity.intervals;
-    return activity.intervals.filter((it) => it.type === intervalFilter);
-  }, [activity.intervals, intervalFilter]);
+    if (intervalFilter === 'ALL') return liveIntervals;
+    return liveIntervals.filter((it) => it.type === intervalFilter);
+  }, [liveIntervals, intervalFilter]);
 
   const parsedDate = new Date(`${activity.date}T12:00:00`);
   const formattedDate = parsedDate.toLocaleDateString('en-GB', {
@@ -605,7 +816,7 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
         </div>
       </div>
 
-      {/* Sub-Navigation Bar (TIMELINE | POWER & PACE | HR & ZONES | INTERVALS) */}
+      {/* Sub-Navigation Bar (TIMELINE | POWER & PACE | HR & ZONES | optional INTERVALS when > 0) */}
       <div
         className={`px-3.5 border-b flex items-center gap-1 overflow-x-auto no-scrollbar ${
           isLight
@@ -615,16 +826,24 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
       >
         {(
           [
-            { id: 'TIMELINE', label: tr('activity.tab.timeline', 'TIMELINE') },
-            { id: 'PACE_POWER', label: tr('activity.tab.power_pace', 'POWER & PACE') },
-            { id: 'HR_ZONES', label: tr('activity.tab.hr_zones', 'HR & ZONES') },
-            {
-              id: 'INTERVALS',
-              label: tr('activity.tab.intervals', `INTERVALS (${activity.intervals.length})`, {
-                count: activity.intervals.length,
-              }),
-            },
-          ] as { id: DetailTab; label: string }[]
+            { id: 'TIMELINE' as DetailTab, label: tr('activity.tab.timeline', 'TIMELINE') },
+            { id: 'PACE_POWER' as DetailTab, label: tr('activity.tab.power_pace', 'POWER & PACE') },
+            { id: 'HR_ZONES' as DetailTab, label: tr('activity.tab.hr_zones', 'HR & ZONES') },
+            ...(liveIntervals.length > 0
+              ? [
+                  {
+                    id: 'INTERVALS' as DetailTab,
+                    label: tr(
+                      'activity.tab.intervals',
+                      `INTERVALS (${liveIntervals.length})`,
+                      {
+                        count: liveIntervals.length,
+                      }
+                    ),
+                  },
+                ]
+              : []),
+          ]
         ).map((tab) => (
           <button
             key={tab.id}
@@ -1045,28 +1264,71 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
         </div>
       )}
 
-      {/* HR & ZONES Tab */}
+      {/* HR & ZONES Tab (Matches Intervals.icu 7-Zone LTHR / BPM Distribution) */}
       {activeTab === 'HR_ZONES' && (
         <div className="p-3.5 space-y-3">
-          <h3 className={`text-xs font-semibold ${subValueColor}`}>
-            Heart Rate & Intensity Zone Distribution
-          </h3>
-          <div className="space-y-2 font-mono tabular-nums text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className={`text-xs font-semibold ${subValueColor}`}>
+              Heart Rate &amp; Intensity Zone Distribution
+            </h3>
+            {(liveRestingHrBpm || liveLthrBpm || liveAthleteMaxHrBpm) && (
+              <div className={`flex flex-wrap items-center gap-3 text-[10px] font-mono tabular-nums ${labelColor}`}>
+                {liveRestingHrBpm && (
+                  <span>
+                    Resting HR <strong className={valueColor}>{liveRestingHrBpm}</strong>
+                  </span>
+                )}
+                {liveLthrBpm && (
+                  <span>
+                    Threshold HR <strong className={valueColor}>{liveLthrBpm}</strong>
+                  </span>
+                )}
+                {liveAthleteMaxHrBpm && (
+                  <span>
+                    Max HR <strong className={valueColor}>{liveAthleteMaxHrBpm}</strong>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5 font-mono tabular-nums text-[11px]">
             {hrZoneRows.map((row) => (
-              <div key={row.zone} className="space-y-1">
-                <div className={`flex justify-between ${subValueColor}`}>
-                  <span className="font-sans">{row.zone}</span>
-                  <span>{row.pct}%</span>
+              <div
+                key={row.code}
+                className="grid grid-cols-12 items-center gap-2 py-1"
+              >
+                <div className="col-span-5 sm:col-span-4 flex items-center justify-between gap-1.5 min-w-0">
+                  <div className="truncate">
+                    <span className={`font-bold mr-1.5 ${valueColor}`}>{row.code}</span>
+                    <span className={`font-sans ${subValueColor}`}>{row.name}</span>
+                  </div>
+                  <span className={`text-[10px] shrink-0 ${labelColor}`}>{row.bpmRange}</span>
                 </div>
-                <div
-                  className={`w-full h-2.5 rounded-xs overflow-hidden ${
-                    isLight ? 'bg-slate-100' : 'bg-slate-800'
-                  }`}
-                >
+
+                <div className="col-span-4 sm:col-span-5">
                   <div
-                    className="h-full"
-                    style={{ width: `${row.pct}%`, backgroundColor: row.color }}
-                  />
+                    className={`w-full h-3.5 rounded-sm overflow-hidden ${
+                      isLight ? 'bg-slate-100' : 'bg-[#1b1f2b]'
+                    }`}
+                  >
+                    <div
+                      className="h-full rounded-sm transition-all duration-300"
+                      style={{
+                        width: `${row.barWidthPct}%`,
+                        backgroundColor: row.color,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="col-span-3 flex items-center justify-end gap-2 text-right">
+                  <span className={`text-[10px] ${subValueColor}`}>
+                    {row.durationLabel}
+                  </span>
+                  <span className={`w-11 font-semibold ${valueColor}`}>
+                    {row.pctFormatted}
+                  </span>
                 </div>
               </div>
             ))}
@@ -1074,8 +1336,8 @@ export const CompletedActivityDetail: React.FC<CompletedActivityDetailProps> = (
         </div>
       )}
 
-      {/* Intervals & Laps Table (Always shown on TIMELINE bottom and in INTERVALS tab) */}
-      {(activeTab === 'TIMELINE' || activeTab === 'INTERVALS') && (
+      {/* Intervals & Laps Table (Shown ONLY when the activity has > 0 intervals) */}
+      {liveIntervals.length > 0 && (activeTab === 'TIMELINE' || activeTab === 'INTERVALS') && (
         <div
           className={`p-3.5 border-t space-y-2.5 ${
             isLight

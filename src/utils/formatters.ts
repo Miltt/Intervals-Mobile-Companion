@@ -1,4 +1,5 @@
 import {
+  ActivityIntervalSplit,
   ActivityStreamPoint,
   CalendarDay,
   CompletedActivity,
@@ -18,6 +19,81 @@ export interface LiveIntervalsPayload {
   events?: Array<Record<string, unknown>>;
   activities?: Array<Record<string, unknown>>;
   wellness?: Array<Record<string, unknown>>;
+}
+
+export function classifyHrToZone(
+  hr: number,
+  hrZonesBpm?: number[],
+  lthrBpm?: number
+): TrainingZone {
+  if (!hr || hr <= 0) return 'Z1';
+  if (Array.isArray(hrZonesBpm) && hrZonesBpm.length >= 5) {
+    const zones: TrainingZone[] = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5', 'Z6', 'Z7'];
+    for (let i = 0; i < hrZonesBpm.length && i < zones.length; i++) {
+      if (hr <= hrZonesBpm[i]) return zones[i];
+    }
+    return zones[Math.min(hrZonesBpm.length - 1, zones.length - 1)];
+  }
+  const lthr = lthrBpm && lthrBpm > 100 ? lthrBpm : 175;
+  const pct = (hr / lthr) * 100;
+  if (pct > 105) return 'Z7';
+  if (pct >= 103) return 'Z6';
+  if (pct >= 100) return 'Z5';
+  if (pct >= 93) return 'Z4';
+  if (pct >= 83) return 'Z3';
+  if (pct >= 76) return 'Z2';
+  return 'Z1';
+}
+
+export function parseIntervalsSplits(
+  rawIntervals: unknown,
+  hrZonesBpm?: number[],
+  lthrBpm?: number
+): ActivityIntervalSplit[] {
+  if (!Array.isArray(rawIntervals) || rawIntervals.length === 0) return [];
+  const splits: ActivityIntervalSplit[] = [];
+  rawIntervals.forEach((raw, idx) => {
+    if (!raw || typeof raw !== 'object') return;
+    const item = raw as Record<string, unknown>;
+    const durSec = Number(item.moving_time || item.elapsed_time || item.duration || 0);
+    if (durSec <= 0) return;
+
+    const rawType = String(item.type || '').toUpperCase();
+    const isWork = rawType === 'WORK' || rawType === 'ACTIVE' || (!rawType && Number(item.intensity || 0) >= 78);
+    const distMeters = Number(item.distance || 0);
+    const distKm = distMeters > 0 ? Number((distMeters / 1000).toFixed(2)) : 0;
+    const speedMs = Number(item.average_speed || 0);
+    const paceSec =
+      speedMs > 0
+        ? Math.round(1000 / speedMs)
+        : distKm > 0
+        ? Math.round(durSec / distKm)
+        : 0;
+    const avgHr = Math.round(Number(item.average_heartrate || 0));
+    const maxHr = Math.round(Number(item.max_heartrate || avgHr || 0));
+    const avgPower = Math.round(Number(item.average_watts || item.weighted_average_watts || 0));
+    const avgCad = Math.round(Number(item.average_cadence || 0));
+    const intensityPct = Math.round(Number(item.intensity || 0));
+    const label = String(item.label || item.name || `${isWork ? 'Work' : 'Recovery'} #${idx + 1}`);
+
+    splits.push({
+      id: String(item.id || `int-${idx}`),
+      name: label,
+      type: isWork ? 'WORK' : 'RECOVERY',
+      elapsedTimeLabel: formatSecondsToClock(durSec),
+      durationSec: durSec,
+      distanceKm: distKm,
+      paceFormatted: paceSec > 0 ? formatPaceSecPerKm(paceSec) : '—',
+      avgCadence: avgCad,
+      avgHr,
+      maxHr,
+      avgPower,
+      avgGradientPct: Number(Number(item.average_gradient || 0).toFixed(1)),
+      intensityPct,
+      zone: classifyHrToZone(avgHr, hrZonesBpm, lthrBpm),
+    });
+  });
+  return splits;
 }
 
 export function formatSecondsToClock(sec: number): string {
@@ -401,7 +477,7 @@ function parseWorkoutDocSteps(
     1,
     flatBlocks.reduce((acc, b) => acc + b.durationSec, 0)
   );
-  const zoneTotals: Record<TrainingZone, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0 };
+  const zoneTotals: Record<TrainingZone, number> = { Z1: 0, Z2: 0, Z3: 0, Z4: 0, Z5: 0, Z6: 0, Z7: 0 };
   for (const b of flatBlocks) {
     zoneTotals[b.zone] = (zoneTotals[b.zone] || 0) + b.durationSec;
   }
@@ -517,6 +593,27 @@ export function buildWeekForOffset(
     }
   }
 
+  // Extract fallback HR zones, LTHR, and Max HR from athlete sportSettings
+  let defaultHrZonesBpm: number[] | undefined;
+  let defaultLthrBpm: number | undefined;
+  let defaultMaxHrBpm: number | undefined;
+  const sportSettingsList = payload.athlete?.sportSettings;
+  if (Array.isArray(sportSettingsList)) {
+    for (const s of sportSettingsList) {
+      const setting = (s || {}) as Record<string, unknown>;
+      if (!defaultHrZonesBpm && Array.isArray(setting.hr_zones) && setting.hr_zones.length >= 5) {
+        defaultHrZonesBpm = setting.hr_zones.map((v) => Number(v || 0)).filter((v) => v > 0);
+      }
+      if (!defaultLthrBpm && Number(setting.lthr || 0) > 0) {
+        defaultLthrBpm = Math.round(Number(setting.lthr));
+      }
+      if (!defaultMaxHrBpm && Number(setting.max_hr || 0) > 0) {
+        defaultMaxHrBpm = Math.round(Number(setting.max_hr));
+      }
+    }
+  }
+  const athleteRestingHr = Number(payload.athlete?.icu_resting_hr || 0) || undefined;
+
   if (Array.isArray(payload.activities)) {
     for (const act of payload.activities) {
       const sport = normalizeSport(String(act.type || 'Run'));
@@ -533,6 +630,11 @@ export function buildWeekForOffset(
       const distMeters = Number(act.distance || 0);
       const distanceKm = distMeters > 0 ? Number((distMeters / 1000).toFixed(2)) : undefined;
       const avgSpeedMs = Number(act.average_speed || 0);
+      const avgSpeedKmh = avgSpeedMs > 0 ? Number((avgSpeedMs * 3.6).toFixed(1)) : undefined;
+      const climbingMeters =
+        Number(act.total_elevation_gain || 0) > 0
+          ? Math.round(Number(act.total_elevation_gain))
+          : undefined;
       const paceSec =
         avgSpeedMs > 0
           ? Math.round(1000 / avgSpeedMs)
@@ -553,6 +655,64 @@ export function buildWeekForOffset(
       const ctl = act.icu_ctl !== undefined ? Math.round(Number(act.icu_ctl)) : 0;
       const atl = act.icu_atl !== undefined ? Math.round(Number(act.icu_atl)) : 0;
 
+      const rawHrZones = Array.isArray(act.icu_hr_zones) ? act.icu_hr_zones : undefined;
+      const hrZonesBpm = rawHrZones
+        ? rawHrZones.map((v) => Number(v || 0)).filter((v) => v > 0)
+        : defaultHrZonesBpm;
+
+      const rawHrZoneTimes = Array.isArray(act.icu_hr_zone_times)
+        ? act.icu_hr_zone_times
+        : Array.isArray(act.hr_zone_times)
+        ? act.hr_zone_times
+        : undefined;
+      const hrZoneTimesSec = rawHrZoneTimes
+        ? rawHrZoneTimes.map((v) => Math.max(0, Math.round(Number(v || 0))))
+        : undefined;
+
+      const lthrBpm =
+        Number(act.lthr || act.icu_lthr || 0) > 0
+          ? Math.round(Number(act.lthr || act.icu_lthr))
+          : defaultLthrBpm;
+      const restingHrBpm =
+        Number(act.icu_resting_hr || 0) > 0
+          ? Math.round(Number(act.icu_resting_hr))
+          : athleteRestingHr;
+      const athleteMaxHrBpm =
+        Number(act.athlete_max_hr || 0) > 0
+          ? Math.round(Number(act.athlete_max_hr))
+          : defaultMaxHrBpm || (hrZonesBpm && hrZonesBpm.length > 0 ? hrZonesBpm[hrZonesBpm.length - 1] : undefined);
+
+      const rawFeel = Number(act.feel || 0);
+      const feelLabel: CompletedActivity['feel'] =
+        rawFeel === 1
+          ? 'Great'
+          : rawFeel === 2
+          ? 'Good'
+          : rawFeel === 3
+          ? 'Normal'
+          : rawFeel === 4
+          ? 'Tired'
+          : rawFeel === 5
+          ? 'Weak'
+          : undefined;
+
+      const rawJoules = Number(act.icu_joules || 0);
+      const workKj = rawJoules > 0 ? Math.round(rawJoules / 1000) : undefined;
+      const rawStride = Number(act.average_stride || 0);
+      const strideMeters = rawStride > 0 ? Number(rawStride.toFixed(2)) : undefined;
+
+      const rawCompliance = act.icu_workout_compliance ?? act.compliance;
+      const compliancePct =
+        rawCompliance !== undefined && rawCompliance !== null && Number(rawCompliance) > 0
+          ? Math.round(Number(rawCompliance))
+          : undefined;
+
+      const parsedIntervals = parseIntervalsSplits(
+        act.icu_intervals,
+        hrZonesBpm,
+        lthrBpm
+      );
+
       const completed: CompletedActivity = {
         id: String(act.id || `act-${dateKey}-${movingTimeSec}`),
         date: dateKey,
@@ -564,6 +724,8 @@ export function buildWeekForOffset(
         distanceKm,
         movingTimeSec,
         movingTimeLabel: formatDurationCompact(movingTimeSec),
+        avgSpeedKmh,
+        climbingMeters,
         paceFormatted:
           distanceKm &&
           ['Run', 'Walk', 'Hike', 'NordicSki', 'Rowing'].includes(sport) &&
@@ -574,13 +736,14 @@ export function buildWeekForOffset(
           distanceKm && sport === 'Run' && gapPaceSec > 0
             ? formatPaceSecPerKm(gapPaceSec)
             : undefined,
-        thresholdPaceFormatted: sport === 'Run' && actTpMs > 0 ? actThresholdFormatted : undefined,
+        thresholdPaceFormatted: sport === 'Run' ? actThresholdFormatted : undefined,
         intensityPct:
           act.icu_intensity !== undefined && act.icu_intensity !== null
             ? Math.round(Number(act.icu_intensity))
             : undefined,
         load: Number(act.icu_training_load || 0),
         rpe: act.icu_rpe !== undefined && act.icu_rpe !== null ? Number(act.icu_rpe) : undefined,
+        feel: feelLabel,
         trimp: act.trimp !== undefined && act.trimp !== null ? Math.round(Number(act.trimp)) : undefined,
         variabilityIndex:
           act.icu_variability_index !== undefined && act.icu_variability_index !== null
@@ -594,21 +757,25 @@ export function buildWeekForOffset(
           act.icu_power_hr !== undefined && act.icu_power_hr !== null
             ? Number(Number(act.icu_power_hr).toFixed(2))
             : undefined,
-        compliancePct:
-          act.icu_workout_compliance !== undefined && act.icu_workout_compliance !== null
-            ? Math.round(Number(act.icu_workout_compliance))
-            : undefined,
+        compliancePct,
         avgHr: avgHr > 0 ? Math.round(avgHr) : 0,
         maxHr: maxHr > 0 ? Math.round(maxHr) : undefined,
+        lthrBpm,
+        restingHrBpm,
+        athleteMaxHrBpm,
+        hrZonesBpm,
+        hrZoneTimesSec,
         cadence: act.average_cadence ? Math.round(Number(act.average_cadence)) : undefined,
+        strideMeters,
         normPower: normWatts > 0 ? Math.round(normWatts) : undefined,
         avgPower: avgWatts > 0 ? Math.round(avgWatts) : undefined,
         fitness: ctl,
         fatigue: atl,
         form: ctl - atl,
+        workKj,
         calories: act.calories ? Math.round(Number(act.calories)) : undefined,
         streams: [],
-        intervals: [],
+        intervals: parsedIntervals,
       };
 
       targetDay.completedActivities.push(completed);

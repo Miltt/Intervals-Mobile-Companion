@@ -25,6 +25,7 @@ import { LocaleMeta } from '../i18n/useTranslation';
 import {
   createNativePkceAuthorizeUrl,
   isStandaloneCapacitorApk,
+  openNativeOAuthBrowser,
 } from '../utils/intervalsClient';
 
 const PRIVACY_POLICY_REPO_URL =
@@ -159,10 +160,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       setIsOpeningOAuth(true);
       setOauthNotice(null);
 
-      // Native Android APK mode: use client-side PKCE with intervalscompanion://oauth/callback
+      // Native Android APK mode: open inside Android Custom Tab (@capacitor/browser) with intervalscompanion://oauth/callback
       if (isStandaloneCapacitorApk()) {
         const nativeUrl = oauthUrl || (await createNativePkceAuthorizeUrl());
-        window.location.href = nativeUrl;
+        await openNativeOAuthBrowser(nativeUrl);
         return;
       }
 
@@ -221,7 +222,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               src="/pwa-512x512.png"
               alt="Intervals Companion"
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-xl border border-cyan-500/40 object-cover shrink-0"
+              className="w-9 h-9 rounded-full object-contain shrink-0"
             />
             <div className="min-w-0">
               <div className="text-sm font-extrabold tracking-tight truncate">
@@ -611,7 +612,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 src="/pwa-512x512.png"
                 alt="Intervals Companion Logo"
                 referrerPolicy="no-referrer"
-                className="w-16 h-16 rounded-2xl mx-auto border border-cyan-500/40 object-cover shadow-lg"
+                className="w-16 h-16 rounded-full mx-auto object-contain drop-shadow-md"
               />
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-xs font-mono">
                 <Globe className="w-3.5 h-3.5" />

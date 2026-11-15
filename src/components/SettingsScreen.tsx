@@ -27,6 +27,7 @@ import {
   UnitSystem,
 } from '../types/settings';
 import { LocaleMeta } from '../i18n/useTranslation';
+import { requestNotificationPermission } from '../utils/notifications';
 
 export type SettingsSubMenu =
   | null
@@ -49,6 +50,7 @@ interface SettingsScreenProps {
   isTabletLandscape?: boolean;
   lastSyncLabel: string;
   nextSyncLabel: string;
+  scheduledDigestCount?: number;
   t: (key: string, params?: Record<string, string | number>) => string;
   availableLanguages: LocaleMeta[];
   activeSubMenu: SettingsSubMenu;
@@ -66,6 +68,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   isTabletLandscape = false,
   lastSyncLabel,
   nextSyncLabel,
+  scheduledDigestCount = 0,
   t,
   availableLanguages,
   activeSubMenu,
@@ -476,15 +479,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* SUB-MENU 2: NOTIFICATIONS */}
       {effectiveSubMenu === 'notifications' && (
         <div className={cardClass}>
-          <div className="flex items-center gap-2">
-            <Bell className="w-4 h-4 text-cyan-500" />
-            <span className={labelClass}>{t('settings.menu.notifications')}</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-cyan-500" />
+              <span className={labelClass}>{t('settings.menu.notifications')}</span>
+            </div>
+            {settings.morningWorkoutNotification && (
+              <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
+                {scheduledDigestCount > 0
+                  ? `${scheduledDigestCount} days scheduled`
+                  : 'Active'}
+              </span>
+            )}
           </div>
 
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               const nextVal = !settings.morningWorkoutNotification;
+              if (nextVal) {
+                await requestNotificationPermission();
+              }
               onUpdateSettings({
                 morningWorkoutNotification: nextVal,
               });

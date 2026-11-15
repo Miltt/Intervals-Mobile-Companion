@@ -1,26 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="112" fill="#131E3A"/>
-  <!-- Left Cyan Sync Arc -->
-  <path d="M96 240C104 156 172 92 256 92" stroke="#00C8F0" stroke-width="20" stroke-linecap="round"/>
-  <path d="M128 240C135 174 189 124 256 124" stroke="#00C8F0" stroke-width="18" stroke-linecap="round"/>
-  <polygon points="256,64 304,108 256,152" fill="#00C8F0"/>
-  <path d="M96 272C104 352 162 414 238 424" stroke="#00C8F0" stroke-width="20" stroke-linecap="round"/>
-  <path d="M128 272C135 334 180 382 242 392" stroke="#00C8F0" stroke-width="18" stroke-linecap="round"/>
-  <!-- Right Orange Sync Arc -->
-  <path d="M416 240C408 160 350 98 274 88" stroke="#FF6438" stroke-width="20" stroke-linecap="round"/>
-  <path d="M384 240C377 178 332 130 270 120" stroke="#FF6438" stroke-width="18" stroke-linecap="round"/>
-  <path d="M416 272C408 356 340 420 256 420" stroke="#FF6438" stroke-width="20" stroke-linecap="round"/>
-  <path d="M384 272C377 338 323 388 256 388" stroke="#FF6438" stroke-width="18" stroke-linecap="round"/>
-  <polygon points="256,448 208,404 256,360" fill="#FF6438"/>
-  <!-- Center Pulse Waveform -->
-  <path d="M52 256H142L156 226L178 294L202 198L218 294L228 260" stroke="#FF6438" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M226 260L238 294L256 176L276 318" stroke="#00C8F0" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M276 318L288 256H302L312 206L334 294" stroke="#FF6438" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M334 294L356 226L370 256H460" stroke="#00C8F0" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Bottom Interval Bars -->
-  <rect x="172" y="316" width="10" height="32" rx="4" fill="#FF6438"/>
-  <rect x="212" y="316" width="10" height="52" rx="4" fill="#00C8F0"/>
-  <rect x="252" y="340" width="10" height="28" rx="4" fill="#FF6438"/>
-  <rect x="292" y="340" width="10" height="28" rx="4" fill="#FF6438"/>
-  <rect x="330" y="316" width="10" height="32" rx="4" fill="#00C8F0"/>
+  <circle cx="256" cy="256" r="240" fill="#FFFFFF" />
+  <!-- Top-Left to Top-Right Blue Sync Arrow -->
+  <path
+    d="M172 326 A 120 120 0 0 1 256 136 L 256 96 L 336 156 L 256 216 L 256 176 A 80 80 0 0 0 202 298 Z"
+    fill="#2554C7"
+  />
+  <!-- Bottom-Right to Bottom-Left Blue Sync Arrow -->
+  <path
+    d="M340 186 A 120 120 0 0 1 256 376 L 256 416 L 176 356 L 256 296 L 256 336 A 80 80 0 0 0 310 214 Z"
+    fill="#2554C7"
+  />
 </svg>

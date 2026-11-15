@@ -15,6 +15,12 @@ interface CapacitorWindow {
   Capacitor?: {
     isNativePlatform?: () => boolean;
     getPlatform?: () => string;
+    Plugins?: {
+      Browser?: {
+        open?: (options: { url: string; windowName?: string; toolbarColor?: string }) => Promise<void>;
+        close?: () => Promise<void>;
+      };
+    };
   };
 }
 
@@ -32,6 +38,40 @@ export function isStandaloneCapacitorApk(): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Opens the Intervals.icu OAuth 2.0 + PKCE page inside an Android Custom Tab (@capacitor/browser)
+ * so that returning via `intervalscompanion://oauth/callback` automatically dismisses the tab.
+ */
+export async function openNativeOAuthBrowser(url: string): Promise<void> {
+  if (typeof window !== 'undefined') {
+    const browserPlugin = (window as unknown as CapacitorWindow).Capacitor?.Plugins?.Browser;
+    if (browserPlugin?.open) {
+      await browserPlugin.open({
+        url,
+        toolbarColor: '#0f1117',
+      });
+      return;
+    }
+    window.location.href = url;
+  }
+}
+
+/**
+ * Explicitly closes the Android Custom Tab (@capacitor/browser) if open.
+ */
+export async function closeNativeOAuthBrowser(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      const browserPlugin = (window as unknown as CapacitorWindow).Capacitor?.Plugins?.Browser;
+      if (browserPlugin?.close) {
+        await browserPlugin.close();
+      }
+    } catch {
+      // ignore if already closed by Android singleTask activity stack
+    }
+  }
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -89,15 +129,37 @@ export interface OAuthExchangeResult {
   athleteName: string;
 }
 
+function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 15000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timer));
+}
+
 /**
  * Exchanges an OAuth 2.0 authorization `code` + stored PKCE `code_verifier` directly with Intervals.icu.
  */
-export async function exchangeNativePkceCode(code: string): Promise<OAuthExchangeResult> {
+export async function exchangeNativePkceCode(
+  code: string,
+  returnedState?: string
+): Promise<OAuthExchangeResult> {
   let codeVerifier = '';
+  let expectedState = '';
   try {
     codeVerifier = localStorage.getItem(PKCE_VERIFIER_STORAGE_KEY) || '';
+    expectedState = localStorage.getItem(PKCE_STATE_STORAGE_KEY) || '';
   } catch {
     // ignore
+  }
+
+  if (returnedState && expectedState && returnedState !== expectedState) {
+    throw new Error('OAuth security state mismatch (CSRF check). Please sign in again.');
   }
 
   const formParams = new URLSearchParams();
@@ -109,7 +171,7 @@ export async function exchangeNativePkceCode(code: string): Promise<OAuthExchang
     formParams.set('code_verifier', codeVerifier);
   }
 
-  const tokenRes = await fetch(INTERVALS_OAUTH_TOKEN_URL, {
+  const tokenRes = await fetchWithTimeout(INTERVALS_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -134,7 +196,7 @@ export async function exchangeNativePkceCode(code: string): Promise<OAuthExchang
 
   if (!athleteName) {
     try {
-      const profileRes = await fetch(`${INTERVALS_BASE_URL}/athlete/0`, {
+      const profileRes = await fetchWithTimeout(`${INTERVALS_BASE_URL}/athlete/0`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
@@ -178,20 +240,24 @@ export async function syncIntervalsDirect(
   };
 
   const [athleteRes, eventsRes, activitiesRes, wellnessRes] = await Promise.all([
-    fetch(`${INTERVALS_BASE_URL}/athlete/0`, { headers }),
-    fetch(
+    fetchWithTimeout(`${INTERVALS_BASE_URL}/athlete/0`, { headers }),
+    fetchWithTimeout(
       `${INTERVALS_BASE_URL}/athlete/0/events?oldest=${encodeURIComponent(oldest)}&newest=${encodeURIComponent(newest)}`,
       { headers }
     ),
-    fetch(
+    fetchWithTimeout(
       `${INTERVALS_BASE_URL}/athlete/0/activities?oldest=${encodeURIComponent(oldest)}&newest=${encodeURIComponent(newest)}`,
       { headers }
     ),
-    fetch(
+    fetchWithTimeout(
       `${INTERVALS_BASE_URL}/athlete/0/wellness?oldest=${encodeURIComponent(oldest)}&newest=${encodeURIComponent(newest)}`,
       { headers }
     ),
   ]);
+
+  if (eventsRes.status === 401 || activitiesRes.status === 401) {
+    throw new Error('Intervals.icu session expired or revoked. Please reconnect in Settings → Account.');
+  }
 
   if (!eventsRes.ok && !activitiesRes.ok) {
     const errText = await eventsRes.text().catch(() => 'Intervals API error');
@@ -211,24 +277,40 @@ export async function syncIntervalsDirect(
   };
 }
 
+export interface DirectActivityDetailAndStreams {
+  activity: Record<string, unknown> | null;
+  streams: Array<{ type: string; data: unknown[] }>;
+}
+
 /**
- * Fetches activity streams directly from Intervals.icu REST API.
+ * Fetches activity detail (including icu_intervals and icu_hr_zone_times) and streams directly from Intervals.icu REST API.
  */
 export async function fetchActivityStreamsDirect(
   accessToken: string,
   activityId: string
-): Promise<Array<{ type: string; data: unknown[] }>> {
+): Promise<DirectActivityDetailAndStreams> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/json',
   };
 
-  const res = await fetch(
-    `${INTERVALS_BASE_URL}/activity/${encodeURIComponent(activityId)}/streams?types=time,distance,velocity_smooth,watts,heartrate,cadence,altitude`,
-    { headers }
-  );
+  const [detailRes, streamsRes] = await Promise.all([
+    fetchWithTimeout(`${INTERVALS_BASE_URL}/activity/${encodeURIComponent(activityId)}?intervals=true`, {
+      headers,
+    }).catch(() => null),
+    fetchWithTimeout(
+      `${INTERVALS_BASE_URL}/activity/${encodeURIComponent(activityId)}/streams?types=time,distance,velocity_smooth,watts,heartrate,cadence,altitude`,
+      { headers }
+    ).catch(() => null),
+  ]);
 
-  if (!res.ok) return [];
-  const streams = await res.json().catch(() => []);
-  return Array.isArray(streams) ? streams : [];
+  const activity =
+    detailRes && detailRes.ok ? await detailRes.json().catch(() => null) : null;
+  const streamsRaw =
+    streamsRes && streamsRes.ok ? await streamsRes.json().catch(() => []) : [];
+
+  return {
+    activity: activity && typeof activity === 'object' ? (activity as Record<string, unknown>) : null,
+    streams: Array.isArray(streamsRaw) ? streamsRaw : [],
+  };
 }

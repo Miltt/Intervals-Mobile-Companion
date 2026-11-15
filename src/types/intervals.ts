@@ -14,7 +14,7 @@ export type SportType =
   | 'Note'
   | (string & {});
 
-export type TrainingZone = 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5';
+export type TrainingZone = 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5' | 'Z6' | 'Z7';
 
 export interface WeatherInfo {
   tempMinC: number;
@@ -149,6 +149,11 @@ export interface CompletedActivity {
   avgHrPct?: number;
   maxHr?: number;
   maxHrPct?: number;
+  lthrBpm?: number;
+  restingHrBpm?: number;
+  athleteMaxHrBpm?: number;
+  hrZonesBpm?: number[]; // e.g. [138, 152, 171, 183, 188, 193, 197]
+  hrZoneTimesSec?: number[]; // e.g. [46, 1877, 4020, 255, 0, 0, 0]
   trimp?: number;
   normPower?: number;
   avgPower?: number;
