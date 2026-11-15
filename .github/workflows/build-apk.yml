@@ -41,7 +41,7 @@ jobs:
 
       - name: Initialize Capacitor Android project
         run: |
-          npm install --legacy-peer-deps @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/browser@^6.0.0 @capacitor/local-notifications@^6.0.0
+          npm install --legacy-peer-deps @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0 @capacitor/local-notifications@^6.0.0
           npx cap add android
           npx cap sync android
 
@@ -49,7 +49,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/java/icu/intervals/companion
 
-          # 1. Write MainActivity.java with intervalscompanion://oauth/callback handler, in-app back gesture, NotificationChannel, and phone portrait lock
+          # 1. Write MainActivity.java with in-app BridgeWebViewClient OAuth interceptor, back gesture, NotificationChannel, and phone portrait lock
           cat << 'EOF' > android/app/src/main/java/icu/intervals/companion/MainActivity.java
           package icu.intervals.companion;
 
@@ -60,13 +60,17 @@ jobs:
           import android.content.pm.ActivityInfo;
           import android.content.pm.PackageManager;
           import android.content.res.Configuration;
+          import android.graphics.Bitmap;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebView;
           import androidx.activity.OnBackPressedCallback;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
+          import com.getcapacitor.BridgeWebViewClient;
 
           public class MainActivity extends BridgeActivity {
               @Override
@@ -74,6 +78,7 @@ jobs:
                   super.onCreate(savedInstanceState);
                   applyDeviceOrientationPolicy();
                   ensureNotificationChannelAndPermission();
+                  registerOAuthWebViewInterceptor();
                   registerInAppBackGesture();
                   handleOAuthIntent(getIntent());
               }
@@ -120,12 +125,66 @@ jobs:
                   }
               }
 
+              private void registerOAuthWebViewInterceptor() {
+                  if (getBridge() == null) return;
+                  getBridge().setWebViewClient(new BridgeWebViewClient(getBridge()) {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                          if (request != null && request.getUrl() != null) {
+                              Uri uri = request.getUrl();
+                              if ("intervalscompanion".equalsIgnoreCase(uri.getScheme())) {
+                                  redirectToLocalAppWithCode(uri);
+                                  return true;
+                              }
+                              String host = uri.getHost() != null ? uri.getHost().toLowerCase() : "";
+                              if (host.equals("intervals.icu") || host.endsWith(".intervals.icu")) {
+                                  return false;
+                              }
+                          }
+                          return super.shouldOverrideUrlLoading(view, request);
+                      }
+
+                      @Override
+                      @SuppressWarnings("deprecation")
+                      public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                          if (url != null) {
+                              Uri uri = Uri.parse(url);
+                              if ("intervalscompanion".equalsIgnoreCase(uri.getScheme())) {
+                                  redirectToLocalAppWithCode(uri);
+                                  return true;
+                              }
+                              String host = uri.getHost() != null ? uri.getHost().toLowerCase() : "";
+                              if (host.equals("intervals.icu") || host.endsWith(".intervals.icu")) {
+                                  return false;
+                              }
+                          }
+                          return super.shouldOverrideUrlLoading(view, url);
+                      }
+
+                      @Override
+                      public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                          if (url != null && url.toLowerCase().startsWith("intervalscompanion://")) {
+                              view.stopLoading();
+                              redirectToLocalAppWithCode(Uri.parse(url));
+                              return;
+                          }
+                          super.onPageStarted(view, url, favicon);
+                      }
+                  });
+              }
+
               private void registerInAppBackGesture() {
                   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
                       @Override
                       public void handleOnBackPressed() {
                           if (getBridge() != null && getBridge().getWebView() != null) {
-                              getBridge().getWebView().evaluateJavascript(
+                              WebView wv = getBridge().getWebView();
+                              String currentUrl = wv.getUrl();
+                              if (currentUrl != null && currentUrl.contains("intervals.icu") && wv.canGoBack()) {
+                                  wv.goBack();
+                                  return;
+                              }
+                              wv.evaluateJavascript(
                                   "(function() { return typeof window.__handleAndroidBackGesture === 'function' ? Boolean(window.__handleAndroidBackGesture()) : false; })()",
                                   value -> {
                                       if (!"true".equals(value)) {
@@ -143,21 +202,26 @@ jobs:
               private void handleOAuthIntent(Intent intent) {
                   if (intent == null) return;
                   Uri data = intent.getData();
-                  if (data != null && "intervalscompanion".equals(data.getScheme())) {
-                      String code = data.getQueryParameter("code");
-                      String state = data.getQueryParameter("state");
-                      if (code != null && !code.isEmpty() && getBridge() != null && getBridge().getWebView() != null) {
-                          String localUrl = getBridge().getLocalUrl();
-                          if (localUrl == null || localUrl.isEmpty() || localUrl.contains("null")) {
-                              localUrl = "https://localhost";
-                          }
-                          if (localUrl.endsWith("/")) {
-                              localUrl = localUrl.substring(0, localUrl.length() - 1);
-                          }
-                          String stateParam = (state != null && !state.isEmpty()) ? "&state=" + Uri.encode(state) : "";
-                          final String targetUrl = localUrl + "/?code=" + Uri.encode(code) + stateParam;
-                          getBridge().getWebView().post(() -> getBridge().getWebView().loadUrl(targetUrl));
+                  if (data != null && "intervalscompanion".equalsIgnoreCase(data.getScheme())) {
+                      redirectToLocalAppWithCode(data);
+                  }
+              }
+
+              private void redirectToLocalAppWithCode(Uri data) {
+                  if (data == null || getBridge() == null || getBridge().getWebView() == null) return;
+                  String code = data.getQueryParameter("code");
+                  String state = data.getQueryParameter("state");
+                  if (code != null && !code.isEmpty()) {
+                      String localUrl = getBridge().getLocalUrl();
+                      if (localUrl == null || localUrl.isEmpty() || localUrl.contains("null")) {
+                          localUrl = "https://localhost";
                       }
+                      if (localUrl.endsWith("/")) {
+                          localUrl = localUrl.substring(0, localUrl.length() - 1);
+                      }
+                      String stateParam = (state != null && !state.isEmpty()) ? "&state=" + Uri.encode(state) : "";
+                      final String targetUrl = localUrl + "/?code=" + Uri.encode(code) + stateParam;
+                      getBridge().getWebView().post(() -> getBridge().getWebView().loadUrl(targetUrl));
                   }
               }
           }

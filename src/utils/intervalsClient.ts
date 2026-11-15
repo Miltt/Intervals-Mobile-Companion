@@ -41,37 +41,21 @@ export function isStandaloneCapacitorApk(): boolean {
 }
 
 /**
- * Opens the Intervals.icu OAuth 2.0 + PKCE page inside an Android Custom Tab (@capacitor/browser)
- * so that returning via `intervalscompanion://oauth/callback` automatically dismisses the tab.
+ * Navigates to the Intervals.icu OAuth 2.0 + PKCE page directly inside the Capacitor WebView.
+ * MainActivity's BridgeWebViewClient intercepts the `intervalscompanion://oauth/callback?code=...`
+ * redirect and returns directly to `https://localhost/?code=...` with zero leftover browser tabs.
  */
 export async function openNativeOAuthBrowser(url: string): Promise<void> {
   if (typeof window !== 'undefined') {
-    const browserPlugin = (window as unknown as CapacitorWindow).Capacitor?.Plugins?.Browser;
-    if (browserPlugin?.open) {
-      await browserPlugin.open({
-        url,
-        toolbarColor: '#0f1117',
-      });
-      return;
-    }
     window.location.href = url;
   }
 }
 
 /**
- * Explicitly closes the Android Custom Tab (@capacitor/browser) if open.
+ * No-op helper kept for compatibility (in-app WebView OAuth leaves no external browser tab open).
  */
 export async function closeNativeOAuthBrowser(): Promise<void> {
-  if (typeof window !== 'undefined') {
-    try {
-      const browserPlugin = (window as unknown as CapacitorWindow).Capacitor?.Plugins?.Browser;
-      if (browserPlugin?.close) {
-        await browserPlugin.close();
-      }
-    } catch {
-      // ignore if already closed by Android singleTask activity stack
-    }
-  }
+  // Handled automatically by in-app BridgeWebViewClient redirect
 }
 
 function toBase64Url(bytes: Uint8Array): string {
