@@ -32,9 +32,12 @@ jobs:
       - name: Install dependencies and build web bundle
         env:
           VITE_CAPACITOR_BUILD: 'true'
+          VITE_BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          npm install --legacy-peer-deps
-          npm run build
+          APP_VER=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=${APP_VER}" >> "$GITHUB_ENV"
+          VITE_APP_VERSION="${APP_VER}" npm install --legacy-peer-deps
+          VITE_APP_VERSION="${APP_VER}" npm run build
 
       - name: Initialize Capacitor Android project
         run: |
@@ -169,7 +172,7 @@ jobs:
           deep_link_filter = """
                       <intent-filter>
                           <action android:name="android.intent.action.VIEW" />
-                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.action.DEFAULT" />
                           <category android:name="android.intent.category.BROWSABLE" />
                           <data android:scheme="intervalscompanion" android:host="oauth" android:pathPrefix="/callback" />
                       </intent-filter>
@@ -219,16 +222,113 @@ jobs:
                   f.write(adaptive_xml)
           PYEOF
 
-      - name: Assemble Debug APK with Gradle
-        working-directory: android
+      - name: Configure Release Signing Keystore & Version in build.gradle
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_NAME: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          mkdir -p release-out
+          EFF_STORE_PASS="${KEYSTORE_PASS:-IntervalsCompanion2026!}"
+          EFF_KEY_ALIAS="${KEY_ALIAS_NAME:-upload}"
+          EFF_KEY_PASS="${KEY_PASS:-$EFF_STORE_PASS}"
 
-      - name: Upload Intervals Companion APK Artifact
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "Using ANDROID_KEYSTORE_BASE64 from GitHub Repository Secrets..."
+            echo "$KEYSTORE_B64" | tr -d ' \n\r\t' | base64 -d > android/app/upload-keystore.jks
+          else
+            echo "ANDROID_KEYSTORE_BASE64 secret not set yet — generating new Upload Keystore with keytool..."
+            keytool -genkeypair -v \
+              -keystore android/app/upload-keystore.jks \
+              -storetype PKCS12 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias "$EFF_KEY_ALIAS" \
+              -storepass "$EFF_STORE_PASS" \
+              -keypass "$EFF_KEY_PASS" \
+              -dname "CN=Intervals Companion, OU=Mobile, O=IntervalsCompanion, L=Berlin, ST=Berlin, C=DE"
+
+            base64 -w 0 android/app/upload-keystore.jks > release-out/ANDROID_KEYSTORE_BASE64.txt
+            cat << 'TXT' > release-out/HOW_TO_SAVE_KEYSTORE_IN_GITHUB_SECRETS.txt
+          ===========================================================================
+          HOW TO LOCK IN YOUR UPLOAD KEYSTORE FOR FUTURE UPDATES & GOOGLE PLAY
+          ===========================================================================
+          To ensure every future APK update installs seamlessly over your existing app
+          (without uninstalling) and matches your Google Play Upload Key:
+
+          1. Open your GitHub repository -> Settings -> Secrets and variables -> Actions
+          2. Click "New repository secret":
+             - Name: ANDROID_KEYSTORE_BASE64
+             - Secret: Paste the entire single-line string from ANDROID_KEYSTORE_BASE64.txt
+          3. Also ensure ANDROID_KEYSTORE_PASSWORD is saved in Repository Secrets
+             (if you did not set one yet, the generated keystore used: IntervalsCompanion2026!)
+          ===========================================================================
+          TXT
+          fi
+
+          # Patch android/app/build.gradle with versionCode, versionName, and release signingConfigs
+          python3 - << 'PYEOF'
+          import os, re
+
+          gradle_path = "android/app/build.gradle"
+          with open(gradle_path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          app_ver = os.environ.get("APP_VERSION", "1.3.0")
+          run_num = int(os.environ.get("RUN_NUMBER", "1"))
+          ver_code = 100 + run_num
+
+          content = re.sub(r'versionCode\s+\d+', f'versionCode {ver_code}', content, count=1)
+          content = re.sub(r'versionName\s+"[^"]*"', f'versionName "{app_ver}"', content, count=1)
+
+          signing_block = """
+              signingConfigs {
+                  release {
+                      storeFile file('upload-keystore.jks')
+                      storePassword System.getenv('EFF_STORE_PASS') ?: 'IntervalsCompanion2026!'
+                      keyAlias System.getenv('EFF_KEY_ALIAS') ?: 'upload'
+                      keyPassword System.getenv('EFF_KEY_PASS') ?: 'IntervalsCompanion2026!'
+                  }
+              }
+          """
+
+          if "signingConfigs" not in content:
+              content = content.replace("buildTypes {", signing_block + "\n    buildTypes {", 1)
+              content = re.sub(
+                  r'(buildTypes\s*\{\s*release\s*\{)',
+                  r'\1\n            signingConfig signingConfigs.release',
+                  content,
+                  count=1
+              )
+
+          with open(gradle_path, "w", encoding="utf-8") as f:
+              f.write(content)
+          PYEOF
+
+      - name: Assemble Signed Release APK & Google Play AAB Bundle
+        working-directory: android
+        env:
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_NAME: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export EFF_STORE_PASS="${KEYSTORE_PASS:-IntervalsCompanion2026!}"
+          export EFF_KEY_ALIAS="${KEY_ALIAS_NAME:-upload}"
+          export EFF_KEY_PASS="${KEY_PASS:-$EFF_STORE_PASS}"
+
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease --no-daemon
+
+          cp app/build/outputs/apk/release/app-release.apk "../release-out/Intervals-Companion-v${APP_VERSION}-b${{ github.run_number }}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "../release-out/Intervals-Companion-v${APP_VERSION}-b${{ github.run_number }}.aab"
+
+      - name: Upload Intervals Companion Release APK & AAB Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Intervals-Companion-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Intervals-Companion-v${{ env.APP_VERSION }}-b${{ github.run_number }}
+          path: release-out/*
           if-no-files-found: error
           retention-days: 30

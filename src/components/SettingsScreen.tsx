@@ -42,7 +42,11 @@ const PRIVACY_POLICY_REPO_URL =
   'https://github.com/Miltt/Intervals-Mobile-Companion/blob/main/PRIVACY.md';
 const TERMS_REPO_URL =
   'https://github.com/Miltt/Intervals-Mobile-Companion/blob/main/TERMS.md';
-const APP_BUILD_VERSION = 'v1.2.0 (Build 2026.11)';
+const APP_VERSION_STR = import.meta.env.VITE_APP_VERSION || '1.3.0';
+const APP_BUILD_NUM = import.meta.env.VITE_BUILD_NUMBER
+  ? `Build #${import.meta.env.VITE_BUILD_NUMBER}`
+  : 'Build 2026.11';
+const APP_BUILD_VERSION = `v${APP_VERSION_STR} (${APP_BUILD_NUM})`;
 
 interface SettingsScreenProps {
   settings: AppSettings;
