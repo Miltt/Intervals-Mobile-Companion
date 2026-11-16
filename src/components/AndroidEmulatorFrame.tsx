@@ -79,10 +79,10 @@ export const AndroidEmulatorFrame: React.FC<AndroidEmulatorFrameProps> = ({
     return () => clearInterval(id);
   }, []);
 
-  // When running inside the compiled Android APK (or standalone mobile mode), render full-screen natively without any emulator bezel
+  // When running inside the compiled Android APK (or standalone mobile mode), render full-screen natively with safe-area insets
   if (!isEmulatorActive) {
     return (
-      <div className="h-dvh w-screen overflow-hidden flex flex-col bg-[#0f1117] select-none">
+      <div className="h-dvh w-screen overflow-hidden flex flex-col bg-[#0f1117] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] select-none">
         {children}
       </div>
     );

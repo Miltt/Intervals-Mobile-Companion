@@ -49,7 +49,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/java/icu/intervals/companion
 
-          # 1. Write MainActivity.java with in-app BridgeWebViewClient OAuth interceptor, back gesture, NotificationChannel, and phone portrait lock
+          # 1. Write MainActivity.java with Android 15 system bar insets, in-app BridgeWebViewClient OAuth interceptor, back gesture, NotificationChannel, and phone portrait lock
           cat << 'EOF' > android/app/src/main/java/icu/intervals/companion/MainActivity.java
           package icu.intervals.companion;
 
@@ -61,14 +61,22 @@ jobs:
           import android.content.pm.PackageManager;
           import android.content.res.Configuration;
           import android.graphics.Bitmap;
+          import android.graphics.Color;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
           import android.webkit.WebResourceRequest;
           import android.webkit.WebView;
           import androidx.activity.OnBackPressedCallback;
           import androidx.core.app.ActivityCompat;
           import androidx.core.content.ContextCompat;
+          import androidx.core.graphics.Insets;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowCompat;
+          import androidx.core.view.WindowInsetsCompat;
+          import androidx.core.view.WindowInsetsControllerCompat;
           import com.getcapacitor.BridgeActivity;
           import com.getcapacitor.BridgeWebViewClient;
 
@@ -76,6 +84,7 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  applySystemBarInsets();
                   applyDeviceOrientationPolicy();
                   ensureNotificationChannelAndPermission();
                   registerOAuthWebViewInterceptor();
@@ -88,6 +97,35 @@ jobs:
                   super.onNewIntent(intent);
                   setIntent(intent);
                   handleOAuthIntent(intent);
+              }
+
+              private void applySystemBarInsets() {
+                  Window window = getWindow();
+                  if (window != null) {
+                      int bgColor = Color.parseColor("#0F1117");
+                      window.getDecorView().setBackgroundColor(bgColor);
+                      window.setStatusBarColor(bgColor);
+                      window.setNavigationBarColor(bgColor);
+                      WindowInsetsControllerCompat controller =
+                          WindowCompat.getInsetsController(window, window.getDecorView());
+                      if (controller != null) {
+                          controller.setAppearanceLightStatusBars(false);
+                          controller.setAppearanceLightNavigationBars(false);
+                      }
+                  }
+
+                  View contentView = findViewById(android.R.id.content);
+                  if (contentView != null) {
+                      contentView.setBackgroundColor(Color.parseColor("#0F1117"));
+                      ViewCompat.setOnApplyWindowInsetsListener(contentView, (v, windowInsets) -> {
+                          Insets bars = windowInsets.getInsets(
+                              WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                          );
+                          v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                          return WindowInsetsCompat.CONSUMED;
+                      });
+                      ViewCompat.requestApplyInsets(contentView);
+                  }
               }
 
               private void applyDeviceOrientationPolicy() {

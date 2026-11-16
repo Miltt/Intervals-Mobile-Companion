@@ -1355,24 +1355,24 @@ export default function App() {
               }}
             />
           ) : (
-          <main className="max-w-5xl mx-auto px-3.5 sm:px-5 pt-3.5 space-y-3.5">
+          <main className="max-w-5xl mx-auto px-4 sm:px-5 pt-4 sm:pt-5 space-y-3.5">
             {/* Scrollable "Intervals Companion" header + Icon-only Settings button (Hidden in Settings) */}
             {activeSection !== 'settings' && (
-              <div className="flex items-center justify-between gap-2 pt-0.5 px-0.5">
-                <div>
+              <div className="flex items-center justify-between gap-3 pt-1 pb-0.5 px-0.5">
+                <div className="min-w-0">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedItem(null);
                       setActiveSection('calendar');
                     }}
-                    className={`text-xl font-extrabold tracking-tight cursor-pointer ${
+                    className={`text-xl font-extrabold tracking-tight cursor-pointer text-left ${
                       isLight ? 'text-slate-900' : 'text-white'
                     }`}
                   >
                     Intervals Companion
                   </button>
-                  <div className="text-[11px] font-mono tabular-nums text-slate-400">
+                  <div className="text-[11px] font-mono tabular-nums text-slate-400 truncate">
                     {t('app.subtitle.pull_to_sync')} · {syncTiming.lastSyncLabel} ·{' '}
                     {settings.autoSyncHours === 0
                       ? t('app.subtitle.manual_sync')
@@ -1380,7 +1380,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Icon-Only Settings Button in Top-Right Corner */}
+                {/* Icon-Only Settings Button in Top-Right Corner (44x44px ergonomic touch target) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1392,10 +1392,10 @@ export default function App() {
                   }}
                   aria-label={t('nav.settings')}
                   title={t('nav.settings')}
-                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  className={`w-11 h-11 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 active:scale-95 ${
                     isLight
                       ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs'
-                      : 'bg-[#161923] border-slate-800 text-slate-200 hover:border-slate-700'
+                      : 'bg-[#161923] border-slate-700/90 text-slate-100 hover:border-slate-600 shadow-md'
                   }`}
                 >
                   <Settings className="w-5 h-5" />
@@ -2001,7 +2001,7 @@ export default function App() {
         {/* Floating Filter Sheet (Opened by the Google Photos-style bottom-right Circular Filter Button) */}
         {!isOnboardingActive && isFilterPopoverOpen && (!selectedItem || isTabletLandscape) && activeSection !== 'settings' && (
           <div
-            className={`absolute bottom-22 z-40 rounded-3xl border p-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-150 ${
+            className={`absolute bottom-24 z-40 rounded-3xl border p-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-3 duration-150 ${
               isTabletLandscape
                 ? 'w-[360px] left-1/2 -translate-x-1/2'
                 : 'left-4 right-4 max-w-md mx-auto'
@@ -2133,7 +2133,7 @@ export default function App() {
         {!isOnboardingActive && activeSection !== 'settings' && (
         <div
           aria-label="App navigation and filter"
-          className={`absolute bottom-4 left-4 right-4 z-30 flex items-center justify-center gap-3 pointer-events-none transition-all duration-300 ${
+          className={`absolute bottom-5 left-4 right-4 z-30 flex items-center justify-center gap-3 pointer-events-none transition-all duration-300 ${
             showFloatingBottomBar && (!selectedItem || isTabletLandscape)
               ? 'translate-y-0 opacity-100'
               : 'translate-y-24 opacity-0'

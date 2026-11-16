@@ -131,23 +131,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-4 pt-1 pb-10">
       {/* Top Section: Settings Title & Subtitle (or Sub-Menu Header when inside a sub-menu on Portrait) */}
       <div className="flex items-center justify-between gap-2">
         {isTabletLandscape ? (
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             {onExitSettings && (
               <button
                 type="button"
                 onClick={onExitSettings}
                 aria-label="Back to Calendar"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 active:scale-95 ${
                   isLight
                     ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                    : 'bg-[#161923] border-slate-800 text-slate-200 hover:bg-slate-800'
+                    : 'bg-[#161923] border-slate-700/90 text-slate-100 hover:bg-slate-800'
                 }`}
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </button>
             )}
             <div>
@@ -161,19 +161,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
           </div>
         ) : activeSubMenu === null ? (
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             {onExitSettings && (
               <button
                 type="button"
                 onClick={onExitSettings}
                 aria-label="Back to Calendar"
-                className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 active:scale-95 ${
                   isLight
                     ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                    : 'bg-[#161923] border-slate-800 text-slate-200 hover:bg-slate-800'
+                    : 'bg-[#161923] border-slate-700/90 text-slate-100 hover:bg-slate-800'
                 }`}
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
               </button>
             )}
             <div>
@@ -184,18 +184,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => onSelectSubMenu(null)}
               aria-label="Back to Settings"
-              className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+              className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 active:scale-95 ${
                 isLight
                   ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                  : 'bg-[#161923] border-slate-800 text-slate-200 hover:bg-slate-800'
+                  : 'bg-[#161923] border-slate-700/90 text-slate-100 hover:bg-slate-800'
               }`}
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
               <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400">
