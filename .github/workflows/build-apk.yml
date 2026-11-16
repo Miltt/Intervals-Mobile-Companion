@@ -333,9 +333,18 @@ jobs:
           TXT
           fi
 
-          # Patch android/app/build.gradle with versionCode, versionName, and release signingConfigs
+          # Patch android/variables.gradle for Google Play API 35 requirement and android/app/build.gradle with versionCode, versionName, and release signingConfigs
           python3 - << 'PYEOF'
           import os, re
+
+          vars_path = "android/variables.gradle"
+          if os.path.exists(vars_path):
+              with open(vars_path, "r", encoding="utf-8") as vf:
+                  vcontent = vf.read()
+              vcontent = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 35', vcontent)
+              vcontent = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 35', vcontent)
+              with open(vars_path, "w", encoding="utf-8") as vf:
+                  vf.write(vcontent)
 
           gradle_path = "android/app/build.gradle"
           with open(gradle_path, "r", encoding="utf-8") as f:
