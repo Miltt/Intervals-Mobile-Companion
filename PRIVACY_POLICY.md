@@ -2,7 +2,7 @@
 
 **Effective Date:** November 17, 2026  
 **Application Name:** Intervals Companion (`icu.intervals.companion`)  
-**Developer Contact:** moshanov.ilia@gmail.com  
+**Developer Contact:** inbox@miltt.net  
 **Repository:** [https://github.com/Miltt/Intervals-Mobile-Companion](https://github.com/Miltt/Intervals-Mobile-Companion)
 
 ---
@@ -56,5 +56,5 @@ If we update this Privacy Policy, we will publish the revised version in this re
 
 ## 8. Contact Us
 If you have any questions or concerns regarding this Privacy Policy or how Intervals Companion handles your data, please contact:
-- **Email:** moshanov.ilia@gmail.com
+- **Email:** inbox@miltt.net
 - **GitHub Issues:** [https://github.com/Miltt/Intervals-Mobile-Companion/issues](https://github.com/Miltt/Intervals-Mobile-Companion/issues)
