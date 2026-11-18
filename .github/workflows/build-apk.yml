@@ -372,7 +372,7 @@ jobs:
           fi
 
           # Patch android/build.gradle to use Google's Maven Central Mirror first (prevents HTTP 429 Too Many Requests on shared GitHub Actions IPs)
-          # and patch android/variables.gradle (minSdkVersion = 26, targetSdkVersion = 35) + android/app/build.gradle signingConfigs
+          # and patch android/variables.gradle (minSdkVersion = 26, compileSdkVersion = 36, targetSdkVersion = 36) + android/app/build.gradle signingConfigs & R8 deobfuscation
           python3 - << 'PYEOF'
           import os, re
 
@@ -386,13 +386,22 @@ jobs:
               with open(root_gradle_path, "w", encoding="utf-8") as rgf:
                   rgf.write(rg_content)
 
+          props_path = "android/gradle.properties"
+          if os.path.exists(props_path):
+              with open(props_path, "r", encoding="utf-8") as pf:
+                  pcontent = pf.read()
+              if "android.suppressUnsupportedCompileSdk" not in pcontent:
+                  pcontent += "\nandroid.suppressUnsupportedCompileSdk=36\n"
+              with open(props_path, "w", encoding="utf-8") as pf:
+                  pf.write(pcontent)
+
           vars_path = "android/variables.gradle"
           if os.path.exists(vars_path):
               with open(vars_path, "r", encoding="utf-8") as vf:
                   vcontent = vf.read()
               vcontent = re.sub(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = 26', vcontent)
-              vcontent = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 35', vcontent)
-              vcontent = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 35', vcontent)
+              vcontent = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 36', vcontent)
+              vcontent = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 36', vcontent)
               with open(vars_path, "w", encoding="utf-8") as vf:
                   vf.write(vcontent)
 
@@ -405,8 +414,11 @@ jobs:
           ver_code = 100 + run_num
 
           content = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 26', content)
+          content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 36', content)
+          content = re.sub(r'targetSdkVersion\s+\d+', 'targetSdkVersion 36', content)
           content = re.sub(r'versionCode\s+\d+', f'versionCode {ver_code}', content, count=1)
           content = re.sub(r'versionName\s+"[^"]*"', f'versionName "{app_ver}"', content, count=1)
+          content = re.sub(r'minifyEnabled\s+false', 'minifyEnabled true', content)
 
           signing_block = """
               signingConfigs {
@@ -430,6 +442,15 @@ jobs:
 
           with open(gradle_path, "w", encoding="utf-8") as f:
               f.write(content)
+
+          proguard_path = "android/app/proguard-rules.pro"
+          with open(proguard_path, "a", encoding="utf-8") as prf:
+              prf.write(
+                  "\n-keep class icu.intervals.companion.** { *; }\n"
+                  "-keep class com.getcapacitor.** { *; }\n"
+                  "-keep class com.capacitorjs.** { *; }\n"
+                  "-dontwarn com.google.errorprone.annotations.**\n"
+              )
           PYEOF
 
       - name: Assemble Signed Release APK & Google Play AAB Bundle
@@ -442,6 +463,10 @@ jobs:
           export EFF_STORE_PASS="${KEYSTORE_PASS:-IntervalsCompanion2026!}"
           export EFF_KEY_ALIAS="${KEY_ALIAS_NAME:-upload}"
           export EFF_KEY_PASS="${KEY_PASS:-$EFF_STORE_PASS}"
+
+          if [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          fi
 
           chmod +x gradlew
           ./gradlew assembleRelease bundleRelease --no-daemon -Dorg.gradle.internal.http.retry.max=5 || {
