@@ -371,7 +371,7 @@ jobs:
           TXT
           fi
 
-          # Patch android/variables.gradle for Google Play API 35 requirement and android/app/build.gradle with versionCode, versionName, and release signingConfigs
+          # Patch android/variables.gradle for Google Play API 35 & Play Automatic Protection (minSdkVersion >= 24) and android/app/build.gradle with versionCode, versionName, and release signingConfigs
           python3 - << 'PYEOF'
           import os, re
 
@@ -379,6 +379,7 @@ jobs:
           if os.path.exists(vars_path):
               with open(vars_path, "r", encoding="utf-8") as vf:
                   vcontent = vf.read()
+              vcontent = re.sub(r'minSdkVersion\s*=\s*\d+', 'minSdkVersion = 26', vcontent)
               vcontent = re.sub(r'compileSdkVersion\s*=\s*\d+', 'compileSdkVersion = 35', vcontent)
               vcontent = re.sub(r'targetSdkVersion\s*=\s*\d+', 'targetSdkVersion = 35', vcontent)
               with open(vars_path, "w", encoding="utf-8") as vf:
@@ -392,6 +393,7 @@ jobs:
           run_num = int(os.environ.get("RUN_NUMBER", "1"))
           ver_code = 100 + run_num
 
+          content = re.sub(r'minSdkVersion\s+\d+', 'minSdkVersion 26', content)
           content = re.sub(r'versionCode\s+\d+', f'versionCode {ver_code}', content, count=1)
           content = re.sub(r'versionName\s+"[^"]*"', f'versionName "{app_ver}"', content, count=1)
 
