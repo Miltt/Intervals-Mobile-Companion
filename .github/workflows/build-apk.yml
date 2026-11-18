@@ -371,9 +371,20 @@ jobs:
           TXT
           fi
 
-          # Patch android/variables.gradle for Google Play API 35 & Play Automatic Protection (minSdkVersion >= 24) and android/app/build.gradle with versionCode, versionName, and release signingConfigs
+          # Patch android/build.gradle to use Google's Maven Central Mirror first (prevents HTTP 429 Too Many Requests on shared GitHub Actions IPs)
+          # and patch android/variables.gradle (minSdkVersion = 26, targetSdkVersion = 35) + android/app/build.gradle signingConfigs
           python3 - << 'PYEOF'
           import os, re
+
+          root_gradle_path = "android/build.gradle"
+          if os.path.exists(root_gradle_path):
+              with open(root_gradle_path, "r", encoding="utf-8") as rgf:
+                  rg_content = rgf.read()
+              google_mirror = "maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }\n        mavenCentral()"
+              if "maven-central.storage-download.googleapis.com" not in rg_content:
+                  rg_content = rg_content.replace("mavenCentral()", google_mirror)
+              with open(root_gradle_path, "w", encoding="utf-8") as rgf:
+                  rgf.write(rg_content)
 
           vars_path = "android/variables.gradle"
           if os.path.exists(vars_path):
@@ -433,7 +444,11 @@ jobs:
           export EFF_KEY_PASS="${KEY_PASS:-$EFF_STORE_PASS}"
 
           chmod +x gradlew
-          ./gradlew assembleRelease bundleRelease --no-daemon
+          ./gradlew assembleRelease bundleRelease --no-daemon -Dorg.gradle.internal.http.retry.max=5 || {
+            echo "Retrying Gradle build after transient repository timeout..."
+            sleep 5
+            ./gradlew assembleRelease bundleRelease --no-daemon -Dorg.gradle.internal.http.retry.max=5
+          }
 
           cp app/build/outputs/apk/release/app-release.apk "../release-out/Intervals-Companion-v${APP_VERSION}-b${{ github.run_number }}.apk"
           cp app/build/outputs/bundle/release/app-release.aab "../release-out/Intervals-Companion-v${APP_VERSION}-b${{ github.run_number }}.aab"
