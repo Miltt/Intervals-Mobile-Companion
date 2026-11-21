@@ -179,6 +179,37 @@ jobs:
                   }
               }
 
+              private void registerNativeHapticsBridge() {
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      getBridge().getWebView().addJavascriptInterface(new NativeHapticsBridge(), "AndroidHaptics");
+                  }
+              }
+
+              public class NativeHapticsBridge {
+                  @JavascriptInterface
+                  public void trigger(final String style) {
+                      if (getBridge() == null || getBridge().getWebView() == null) return;
+                      final WebView wv = getBridge().getWebView();
+                      wv.post(() -> {
+                          try {
+                              int feedbackConstant = HapticFeedbackConstants.CLOCK_TICK;
+                              if ("heavy".equalsIgnoreCase(style)) {
+                                  feedbackConstant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                                      ? HapticFeedbackConstants.CONFIRM
+                                      : HapticFeedbackConstants.LONG_PRESS;
+                              } else if ("medium".equalsIgnoreCase(style)) {
+                                  feedbackConstant = HapticFeedbackConstants.CONTEXT_CLICK;
+                              }
+                              wv.performHapticFeedback(
+                                  feedbackConstant,
+                                  HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+                              );
+                          } catch (Throwable ignored) {
+                          }
+                      });
+                  }
+              }
+
               private void registerOAuthWebViewInterceptor() {
                   if (getBridge() == null) return;
                   getBridge().setWebViewClient(new BridgeWebViewClient(getBridge()) {
@@ -193,6 +224,17 @@ jobs:
                               String host = uri.getHost() != null ? uri.getHost().toLowerCase() : "";
                               if (host.equals("intervals.icu") || host.endsWith(".intervals.icu")) {
                                   return false;
+                              }
+                              String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
+                              if (("http".equals(scheme) || "https".equals(scheme))
+                                      && !host.equals("localhost")
+                                      && !host.equals("127.0.0.1")) {
+                                  try {
+                                      Intent browserIntent = new Intent(Intent.ACTION_VIEW, uri);
+                                      startActivity(browserIntent);
+                                      return true;
+                                  } catch (Exception ignored) {
+                                  }
                               }
                           }
                           return super.shouldOverrideUrlLoading(view, request);
@@ -210,6 +252,17 @@ jobs:
                               String host = uri.getHost() != null ? uri.getHost().toLowerCase() : "";
                               if (host.equals("intervals.icu") || host.endsWith(".intervals.icu")) {
                                   return false;
+                              }
+                              String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
+                              if (("http".equals(scheme) || "https".equals(scheme))
+                                      && !host.equals("localhost")
+                                      && !host.equals("127.0.0.1")) {
+                                  try {
+                                      Intent browserIntent = new Intent(Intent.ACTION_VIEW, uri);
+                                      startActivity(browserIntent);
+                                      return true;
+                                  } catch (Exception ignored) {
+                                  }
                               }
                           }
                           return super.shouldOverrideUrlLoading(view, url);
@@ -465,6 +518,10 @@ jobs:
                   "\n-keep class icu.intervals.companion.** { *; }\n"
                   "-keep class com.getcapacitor.** { *; }\n"
                   "-keep class com.capacitorjs.** { *; }\n"
+                  "-keepclassmembers class * {\n"
+                  "    @android.webkit.JavascriptInterface <methods>;\n"
+                  "}\n"
+                  "-keepattributes JavascriptInterface,*Annotation*\n"
                   "-dontwarn com.google.errorprone.annotations.**\n"
               )
           PYEOF
