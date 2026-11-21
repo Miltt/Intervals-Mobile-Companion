@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { PlannedWorkout, SportType, WorkoutStepBlock } from '../types/intervals';
 import { formatSecondsToClock } from '../utils/formatters';
+import { LinkifiedText } from '../utils/linkify';
 
 interface PlannedWorkoutDetailProps {
   workout: PlannedWorkout;
@@ -255,7 +256,9 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
                         isLight ? 'marker:text-slate-400 text-slate-800' : 'marker:text-slate-500 text-slate-200'
                       }`}
                     >
-                      <span className="font-mono tabular-nums text-[11px]">{item.text}</span>
+                      <span className="font-mono tabular-nums text-[11px] break-words">
+                        <LinkifiedText text={item.text} isLight={isLight} />
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -265,7 +268,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
 
           {workout.coachNotes && (
             <div
-              className={`pt-2 text-[11px] leading-relaxed border-t ${
+              className={`pt-2 text-[11px] leading-relaxed border-t whitespace-pre-line break-words ${
                 isLight
                   ? 'border-slate-200 text-slate-600'
                   : 'border-slate-800/70 text-slate-400'
@@ -274,7 +277,7 @@ export const PlannedWorkoutDetail: React.FC<PlannedWorkoutDetailProps> = ({
               <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
                 {tr('detail.coach_notes', 'Coach Notes:')}{' '}
               </span>
-              {workout.coachNotes}
+              <LinkifiedText text={workout.coachNotes} isLight={isLight} />
             </div>
           )}
         </div>

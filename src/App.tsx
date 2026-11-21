@@ -60,6 +60,7 @@ import {
   syncIntervalsDirect,
 } from './utils/intervalsClient';
 import { scheduleUpcomingWorkoutNotifications } from './utils/notifications';
+import { triggerHaptic } from './utils/haptics';
 
 const LIVE_CACHE_STORAGE_KEY = 'intervals_icu_companion_live_payload_v5';
 const OAUTH_TOKEN_STORAGE_KEY = 'intervals_icu_oauth_token_v5';
@@ -543,8 +544,16 @@ export default function App() {
     return new Set<SportType>(enabled.length > 0 ? enabled : discoveredSports);
   }, [discoveredSports, excludedFilterSports]);
 
+  const isSyncingRef = useRef<boolean>(false);
+  const lastSyncedAtRef = useRef<string>(syncState.lastSyncedAt);
+  useEffect(() => {
+    lastSyncedAtRef.current = syncState.lastSyncedAt;
+  }, [syncState.lastSyncedAt]);
+
   const performSync = useCallback(
     async (isManualForceCollect: boolean, explicitToken?: string) => {
+      if (isSyncingRef.current) return;
+
       let storedToken = explicitToken || '';
       if (!storedToken) {
         try {
@@ -569,6 +578,7 @@ export default function App() {
         return;
       }
 
+      isSyncingRef.current = true;
       setSyncState((prev) => ({ ...prev, isSyncing: true, syncError: null }));
 
       try {
@@ -633,6 +643,7 @@ export default function App() {
           const merged = mergePayloads(prevPayload, incomingPayload, oldestIso, newestIso);
           livePayloadRef.current = merged;
           setLivePayload(merged);
+          lastSyncedAtRef.current = nowIso;
 
           try {
             localStorage.setItem(
@@ -662,16 +673,14 @@ export default function App() {
             athleteName: data.athlete?.name ? String(data.athlete.name) : prev.athleteName,
           }));
 
-          if (isManualForceCollect) {
-            const toastMessage = formatSyncSummaryToast(
-              prevPayload,
-              incomingPayload,
-              merged,
-              oldestIso,
-              newestIso
-            );
-            setSyncToast(toastMessage);
-          }
+          const toastMessage = formatSyncSummaryToast(
+            prevPayload,
+            incomingPayload,
+            merged,
+            oldestIso,
+            newestIso
+          );
+          setSyncToast(toastMessage);
         } else {
           setSyncState((prev) => ({
             ...prev,
@@ -698,6 +707,8 @@ export default function App() {
         if (isManualForceCollect) {
           setSyncToast('Offline — showing locally cached calendar.');
         }
+      } finally {
+        isSyncingRef.current = false;
       }
     },
     [settings.lookaheadDays, autoSyncIntervalMs, handleUpdateSettings]
@@ -801,10 +812,103 @@ export default function App() {
     return () => clearTimeout(t);
   }, [syncToast]);
 
+  // Live 30s clock tick so relative sync timestamps ("Just now", "12m ago", "in 5h 48m") update automatically
+  const [syncClockTick, setSyncClockTick] = useState<number>(0);
+
   const syncTiming = useMemo(
     () => formatRelativeSyncTime(syncState.lastSyncedAt, settings.autoSyncHours),
-    [syncState.lastSyncedAt, settings.autoSyncHours]
+    [syncState.lastSyncedAt, settings.autoSyncHours, syncClockTick]
   );
+
+  // Automatic Background / Foreground Sync Scheduler (6h, 12h, 24h; disabled when autoSyncHours === 0 Manual)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!settings.isLoggedIn || settings.autoSyncHours === 0 || autoSyncIntervalMs <= 0) {
+      return;
+    }
+
+    const canAutoSyncOnCurrentNetwork = (): boolean => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return false;
+      }
+      if (settings.wifiOnlySync && typeof navigator !== 'undefined') {
+        const navWithConn = navigator as Navigator & {
+          connection?: { type?: string; saveData?: boolean };
+        };
+        const connType = navWithConn.connection?.type;
+        if (connType && connType === 'cellular') {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const getLatestSyncedTimestampMs = (): number => {
+      let iso = lastSyncedAtRef.current;
+      if (!iso) {
+        try {
+          const saved = localStorage.getItem(LIVE_CACHE_STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed?.lastSyncedAt) iso = String(parsed.lastSyncedAt);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (!iso) return 0;
+      const ms = new Date(iso).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    };
+
+    const checkAndRunAutoSync = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      setSyncClockTick((n) => n + 1);
+      if (isSyncingRef.current || !canAutoSyncOnCurrentNetwork()) {
+        return;
+      }
+      const lastMs = getLatestSyncedTimestampMs();
+      const elapsedMs = lastMs > 0 ? Date.now() - lastMs : Infinity;
+      if (elapsedMs >= autoSyncIntervalMs) {
+        performSync(false);
+      }
+    };
+
+    // Run immediately on mount or whenever the user changes autoSyncHours (6h, 12h, 24h)
+    checkAndRunAutoSync();
+
+    // Schedule exact timer for the next due auto-sync plus a 60s check & foreground resume listeners
+    const lastMs = getLatestSyncedTimestampMs();
+    const elapsedMs = lastMs > 0 ? Math.max(0, Date.now() - lastMs) : 0;
+    const remainingMs = Math.max(5000, autoSyncIntervalMs - elapsedMs);
+    const nextDueTimeoutId = window.setTimeout(checkAndRunAutoSync, remainingMs);
+    const heartbeatId = window.setInterval(checkAndRunAutoSync, 60000);
+
+    document.addEventListener('visibilitychange', checkAndRunAutoSync);
+    window.addEventListener('focus', checkAndRunAutoSync);
+    window.addEventListener('pageshow', checkAndRunAutoSync);
+    window.addEventListener('online', checkAndRunAutoSync);
+    window.addEventListener('android-app-resume', checkAndRunAutoSync);
+
+    return () => {
+      window.clearTimeout(nextDueTimeoutId);
+      window.clearInterval(heartbeatId);
+      document.removeEventListener('visibilitychange', checkAndRunAutoSync);
+      window.removeEventListener('focus', checkAndRunAutoSync);
+      window.removeEventListener('pageshow', checkAndRunAutoSync);
+      window.removeEventListener('online', checkAndRunAutoSync);
+      window.removeEventListener('android-app-resume', checkAndRunAutoSync);
+    };
+  }, [
+    settings.isLoggedIn,
+    settings.autoSyncHours,
+    settings.wifiOnlySync,
+    autoSyncIntervalMs,
+    syncState.lastSyncedAt,
+    performSync,
+  ]);
 
   // Refresh current day selection in the week navigator when returning from background on a new calendar day
   useEffect(() => {
@@ -814,6 +918,7 @@ export default function App() {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return;
       }
+      setSyncClockTick((n) => n + 1);
       const nowTodayIso = toLocalIsoDate(new Date());
       if (nowTodayIso !== lastActiveTodayRef.current) {
         lastActiveTodayRef.current = nowTodayIso;
@@ -826,12 +931,14 @@ export default function App() {
     document.addEventListener('visibilitychange', checkForegroundDayRollover);
     window.addEventListener('focus', checkForegroundDayRollover);
     window.addEventListener('pageshow', checkForegroundDayRollover);
-    const intervalId = setInterval(checkForegroundDayRollover, 60000);
+    window.addEventListener('android-app-resume', checkForegroundDayRollover);
+    const intervalId = setInterval(checkForegroundDayRollover, 30000);
 
     return () => {
       document.removeEventListener('visibilitychange', checkForegroundDayRollover);
       window.removeEventListener('focus', checkForegroundDayRollover);
       window.removeEventListener('pageshow', checkForegroundDayRollover);
+      window.removeEventListener('android-app-resume', checkForegroundDayRollover);
       clearInterval(intervalId);
     };
   }, []);
@@ -1018,6 +1125,12 @@ export default function App() {
     const rawDelta = clientY - pullStartYRef.current;
     if (rawDelta > 0) {
       const damped = Math.min(110, rawDelta * 0.52);
+      if (
+        (damped >= PULL_REFRESH_THRESHOLD && pullDistance < PULL_REFRESH_THRESHOLD) ||
+        (damped < PULL_REFRESH_THRESHOLD && pullDistance >= PULL_REFRESH_THRESHOLD)
+      ) {
+        triggerHaptic('light');
+      }
       setPullDistance(damped);
     } else {
       setPullDistance(0);
@@ -1030,6 +1143,7 @@ export default function App() {
     pullStartYRef.current = null;
 
     if (pullDistance >= PULL_REFRESH_THRESHOLD && !syncState.isSyncing) {
+      triggerHaptic('heavy');
       setPullDistance(0);
       performSync(true);
     } else {
@@ -1185,6 +1299,24 @@ export default function App() {
     handleBackNavigationRef.current = handleBackNavigation;
   }, [handleBackNavigation]);
 
+  // Global delegated haptic feedback for all interactive buttons (Back arrows, Settings rows, Day pills, Week arrows, Tabs, Cards)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const interactive = target.closest(
+        'button, [role="button"], input[type="checkbox"], input[type="radio"]'
+      ) as HTMLElement | null;
+      if (!interactive || (interactive as HTMLButtonElement).disabled) return;
+      triggerHaptic('light');
+    };
+    document.addEventListener('click', handleGlobalClick, { passive: true });
+    return () => {
+      document.removeEventListener('click', handleGlobalClick);
+    };
+  }, []);
+
   // Expose window.__handleAndroidBackGesture for Capacitor MainActivity OnBackPressedCallback
   // and bind browser popstate for web/PWA back gesture navigation
   useEffect(() => {
@@ -1193,13 +1325,20 @@ export default function App() {
     const win = window as Window & {
       __handleAndroidBackGesture?: () => boolean;
     };
-    win.__handleAndroidBackGesture = () => handleBackNavigationRef.current();
+    win.__handleAndroidBackGesture = () => {
+      const handled = handleBackNavigationRef.current();
+      if (handled) {
+        triggerHaptic('light');
+      }
+      return handled;
+    };
 
     if (!isStandaloneCapacitorApk()) {
       window.history.pushState({ intervalsInAppGuard: true }, '');
       const onPopState = () => {
         const handled = handleBackNavigationRef.current();
         if (handled) {
+          triggerHaptic('light');
           window.history.pushState({ intervalsInAppGuard: true }, '');
         }
       };
@@ -1384,6 +1523,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    triggerHaptic('medium');
                     setIsFilterPopoverOpen(false);
                     setSelectedItem(null);
                     setSettingsSubMenu(null);
@@ -2150,6 +2290,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                triggerHaptic('medium');
                 setActiveSection('calendar');
                 setSelectedItem(null);
               }}
@@ -2168,6 +2309,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                triggerHaptic('medium');
                 setActiveSection('incoming');
                 setSelectedItem(null);
               }}
@@ -2187,7 +2329,10 @@ export default function App() {
           {/* Right Detached Circular Filter Button (Matches Google Photos Circular Search Button) */}
           <button
             type="button"
-            onClick={() => setIsFilterPopoverOpen((prev) => !prev)}
+            onClick={() => {
+              triggerHaptic('medium');
+              setIsFilterPopoverOpen((prev) => !prev);
+            }}
             aria-label={t('nav.filter')}
             title={t('nav.filter')}
             className={`pointer-events-auto relative w-14 h-14 rounded-full border shadow-2xl backdrop-blur-xl flex items-center justify-center transition-all cursor-pointer shrink-0 ${
