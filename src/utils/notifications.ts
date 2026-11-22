@@ -24,6 +24,8 @@ interface CapacitorLocalNotificationsPlugin {
       title: string;
       body: string;
       channelId?: string;
+      smallIcon?: string;
+      iconColor?: string;
       schedule?: {
         at: Date;
         allowWhileIdle?: boolean;
@@ -229,6 +231,8 @@ export async function scheduleUpcomingWorkoutNotifications(params: {
     title: string;
     body: string;
     channelId: string;
+    smallIcon: string;
+    iconColor: string;
     schedule: { at: Date; allowWhileIdle: boolean };
   }> = [];
 
@@ -249,6 +253,8 @@ export async function scheduleUpcomingWorkoutNotifications(params: {
       title,
       body,
       channelId: DIGEST_CHANNEL_ID,
+      smallIcon: 'ic_stat_sync',
+      iconColor: '#2554C7',
       schedule: {
         at: triggerDate,
         allowWhileIdle: true,

@@ -376,7 +376,7 @@ jobs:
             fi
           done
 
-          # 4. Configure adaptive + monochrome icon XML descriptors in mipmap-anydpi-v26 (no leading whitespace before <?xml)
+          # 4. Configure adaptive + monochrome icon XML descriptors in mipmap-anydpi-v26 and status bar notification icon ic_stat_sync.xml in res/drawable (no leading whitespace before <?xml)
           python3 - << 'PYEOF'
           import os
           os.makedirs("android/app/src/main/res/mipmap-anydpi-v26", exist_ok=True)
@@ -391,6 +391,29 @@ jobs:
           for fname in ("ic_launcher.xml", "ic_launcher_round.xml"):
               with open(f"android/app/src/main/res/mipmap-anydpi-v26/{fname}", "w", encoding="utf-8") as f:
                   f.write(adaptive_xml)
+
+          os.makedirs("android/app/src/main/res/drawable", exist_ok=True)
+          stat_sync_xml = (
+              '<?xml version="1.0" encoding="utf-8"?>\n'
+              '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+              '    android:width="24dp"\n'
+              '    android:height="24dp"\n'
+              '    android:viewportWidth="360"\n'
+              '    android:viewportHeight="360">\n'
+              '    <group\n'
+              '        android:translateX="-76"\n'
+              '        android:translateY="-76">\n'
+              '        <path\n'
+              '            android:fillColor="#FFFFFF"\n'
+              '            android:pathData="M172,326 A120,120 0 0,1 256,136 L256,96 L336,156 L256,216 L256,176 A80,80 0 0,0 202,298 Z" />\n'
+              '        <path\n'
+              '            android:fillColor="#FFFFFF"\n'
+              '            android:pathData="M340,186 A120,120 0 0,1 256,376 L256,416 L176,356 L256,296 L256,336 A80,80 0 0,0 310,214 Z" />\n'
+              '    </group>\n'
+              '</vector>\n'
+          )
+          with open("android/app/src/main/res/drawable/ic_stat_sync.xml", "w", encoding="utf-8") as sf:
+              sf.write(stat_sync_xml)
           PYEOF
 
       - name: Configure Release Signing Keystore & Version in build.gradle
